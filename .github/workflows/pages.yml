@@ -1,0 +1,51 @@
+name: 教科書を自動公開
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 教材を検証
+    runs-on: ubuntu-latest
+    steps:
+      - name: ファイルを取得
+        uses: actions/checkout@v6
+      - name: Node.jsを準備
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: 教材の動作を検証
+        run: node --test textbook/tests/*.test.*
+      - name: 公開用ファイルを準備
+        run: |
+          mkdir _site
+          rsync -a --exclude='tests/' textbook/ _site/
+      - name: 教科書をアップロード
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+  deploy:
+    name: 教科書を公開
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 公開設定を読み込む
+        uses: actions/configure-pages@v5
+      - name: 教科書を公開
+        id: deployment
+        uses: actions/deploy-pages@v4
