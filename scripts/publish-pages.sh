@@ -28,5 +28,5 @@ if git -C "$publish_dir" diff --cached --quiet; then
   echo '公開する変更はありません。'
   exit 0
 fi
-git -C "$publish_dir" commit -m "教科書を公開（元のコミット: $source_commit）"
+git -C "$publish_dir" commit -m "教科書を公開（元のコミット: ${source_commit}）"
 git -C "$publish_dir" push origin gh-pages
