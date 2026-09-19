@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="ja">
+<head>
+ <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+ <title>電卓レベルの言語の作成｜自分で育てる教科書</title>
+ <meta name="description" content="文字列からトークン、構文木、アセンブリへ。電卓レベルのコンパイラの仕組みをSVG図解と動く観察で学ぶ。">
+ <link rel="stylesheet" href="calculator.css?v=2"><link rel="stylesheet" href="parser-trace.css"><script type="module" src="parser-trace.js"></script><script src="calculator.js" defer></script>
+<link rel="stylesheet" href="navigation.css?v=2">
+<script src="navigation.js?v=2" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">本文へ移動</a>
+<button id="navigation-toggle" class="navigation-toggle" type="button" aria-controls="textbook-navigation" aria-expanded="true" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM10 5v14"/></svg><span>ナビを閉じる</span></button>
+<aside class="sidebar" id="textbook-navigation">
+ <div class="brand"><span class="brand-mark" aria-hidden="true">本</span>自分で育てる教科書</div>
+ <div class="volume">コンパイラをつくる / 第２章<br><a href="index.html"><span>第１章：機械語とアセンブラ</span><span aria-hidden="true">→</span></a><br><a href="linking.html"><span>第３章：分割コンパイルとリンク</span><span aria-hidden="true">→</span></a><br><a href="functions.html"><span>第４章：関数とローカル変数</span><span aria-hidden="true">→</span></a><br><a href="integers.html"><span>第５章：コンピュータにおける整数の表現</span><span aria-hidden="true">→</span></a><br><a href="pointers.html"><span>第６章：ポインタと文字列リテラル</span><span aria-hidden="true">→</span></a><br><a href="program.html"><span>第７章：プログラムの実行イメージと初期化式</span><span aria-hidden="true">→</span></a><br><a href="dynamic-linking.html"><span>第８章：スタティックリンクとダイナミックリンク</span><span aria-hidden="true">→</span></a><br><a href="types.html"><span>第９章：Cの型の構文</span><span aria-hidden="true">→</span></a></div>
+ <nav aria-label="この章の目次">
+  <a href="#overview"><span class="navno">01</span>計算する命令をつくる</a>
+  <a href="#tokens"><span class="navno">02</span>文字列を意味のある単位へ</a>
+  <a href="#tree"><span class="navno">03</span>式のまとまりを木にする</a>
+  <a href="#grammar"><span class="navno">04</span>文法を関数にする</a>
+  <a href="#stack"><span class="navno">05</span>途中結果をスタックへ</a>
+  <a href="#operators"><span class="navno">06</span>符号と比較を加える</a>
+  <a href="#observe"><span class="navno">07</span>変換の流れを観察する</a>
+  <a href="#check"><span class="navno">08</span>理解を確かめる</a>
+ </nav>
+ <div class="sidebar-bottom">少し読んで、仕組みを追って、<br>自分の言葉にしてみる。<br><br><a href="https://www.sigbus.info/compilerbook#電卓レベルの言語の作成" target="_blank" rel="noreferrer">原書の章を開く ↗</a></div>
+</aside>
+<main id="main">
+ <div class="topline"><span>コンパイラをつくる / 第２章</span><span>第１版 · 2026.09.15</span></div>
+ <header>
+  <div class="eyebrow">文字の並びから、計算の構造へ</div>
+  <h1>電卓レベルの<br>言語の作成</h1>
+  <p class="lede">CPUは、式のカッコや優先順位を知らない。<br>その意味を読み取り、正しい順序の命令へ変えるのがコンパイラの仕事。</p>
+  <div class="goal"><b>この章の到達点</b><code>8 + 3 * 2</code> が14になる命令列を、どんな中間表現を通して作るのか説明できる。</div>
+  <p class="caption">対象：原書のステップ１〜７。x86-64・Linux・Intel記法を前提にした補助教材。独自の例とSVG図解で整理しています。<a href="https://www.sigbus.info/compilerbook#電卓レベルの言語の作成">原書を読む ↗</a></p>
+ </header>
+
+ <section id="overview">
+  <h2><span>01</span>計算する命令をつくる</h2>
+  <p>入力の <code>8 + 3 * 2</code> は、最初はただの文字列。コンパイラはそこから演算のまとまりを読み取り、<strong>あとで実行すると14になるプログラム</strong>を出力する。この段階の出力はアセンブリの文字列だ。</p>
+  <figure><div class="scroll"><svg viewBox="0 0 760 260" role="img" aria-labelledby="pipeline-title">
+   <title id="pipeline-title">コンパイル時に構造を読み、実行時に計算する</title>
+   <text x="18" y="27" class="title">コンパイル時：どう計算するかを決める</text>
+   <g class="frame"><rect x="16" y="47" width="155" height="72" rx="5"/><rect x="206" y="47" width="155" height="72" rx="5"/><rect x="396" y="47" width="155" height="72" rx="5"/><rect x="586" y="47" width="158" height="72" rx="5"/></g>
+   <text x="93" y="77" text-anchor="middle">文字列</text><text x="93" y="101" text-anchor="middle" class="mono">8 + 3 * 2</text>
+   <text x="283" y="77" text-anchor="middle">トークン列</text><text x="283" y="101" text-anchor="middle" class="small">数と記号に区切る</text>
+   <text x="473" y="77" text-anchor="middle">抽象構文木</text><text x="473" y="101" text-anchor="middle" class="small">式のまとまりを表す</text>
+   <text x="665" y="77" text-anchor="middle">アセンブリ</text><text x="665" y="101" text-anchor="middle" class="small">命令を並べる</text>
+   <g fill="#ac4b30"><path d="M179 77L196 85L179 93Z"/><path d="M369 77L386 85L369 93Z"/><path d="M559 77L576 85L559 93Z"/></g>
+   <defs><marker id="pipeline-run-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#8b9e8b"/></marker></defs>
+   <path d="M665 119V181" class="link" marker-end="url(#pipeline-run-arrow)"/><text x="645" y="152" text-anchor="end" class="small">アセンブル・リンクして実行</text>
+   <rect x="16" y="181" width="728" height="60" rx="5" class="warm"/><text x="36" y="207" class="title">実行時</text><text x="36" y="229" class="small">生成された実行ファイルを動かす</text>
+   <text x="350" y="218">CPUが命令を実行 → 計算結果 14</text>
+  </svg></div><figcaption>木はコンパイラ内部のデータ。CPUは木を直接読まず、生成された機械語を実行する。</figcaption></figure>
+  <h3>最初の２段階は、出力の形をつかむためにある</h3>
+  <p>整数１個なら「その値をRAXに入れて返す」で足りる。加減算だけなら、最初の値をRAXに入れ、続く数を足し引きできる。<code>8 + 3 - 2</code> なら、実行時のRAXは <code>8 → 11 → 9</code> と変わる。</p>
+  <div class="codebox"><div class="codehead">加減算だけの段階で出す命令の例</div><pre><code>mov rax, 8
+add rax, 3
+sub rax, 2
+ret</code></pre></div>
+  <p>乗算を足すと、文字の順番通りの計算では困る。<code>8 + 3 * 2</code> をそのまま左から処理すると22になるため、まず <code>3 * 2</code> をひとまとまりとして認識する必要がある。</p>
+  <details><summary>原書のステップと、この教科書の対応</summary><table class="roadmap"><thead><tr><th>ステップ</th><th>増えるもの</th><th>読む場所</th></tr></thead><tbody>
+   <tr><td>１</td><td>整数１個、ビルドとテストの土台</td><td>この節・理解の確認</td></tr>
+   <tr><td>２</td><td>加減算</td><td>この節</td></tr>
+   <tr><td>３・４</td><td>トークンとエラー位置</td><td><a href="#tokens">文字列を意味のある単位へ</a></td></tr>
+   <tr><td>５</td><td>四則演算・カッコ</td><td><a href="#tree">木</a>・<a href="#grammar">文法</a>・<a href="#stack">スタック</a></td></tr>
+   <tr><td>６・７</td><td>単項演算子・比較</td><td><a href="#operators">符号と比較を加える</a></td></tr>
+  </tbody></table></details>
+ </section>
+
+ <section id="tokens">
+  <h2><span>02</span>文字列を意味のある単位へ</h2>
+  <p><strong>トークン</strong>は、後の処理（ここでは主に、抽象構文木を作る構文解析）が１単位として扱う数や記号。字句解析（トークナイズ）は、文字を読み、トークンの種類や値を取り出す作業だ。<code>12</code> は「1」と「2」の２文字でも、整数のトークンとしては１個になる。</p>
+  <figure><div class="scroll"><svg viewBox="0 0 760 259" role="img" aria-labelledby="token-title">
+   <title id="token-title">12と小なりイコールをそれぞれ１トークンにまとめる</title>
+   <text x="18" y="29" class="title">入力：12 &lt;= 8 + 4</text><text x="18" y="54" class="small">文字の位置は０から数える。空白も位置には含む。</text>
+   <g class="mono" text-anchor="middle"><text x="84" y="89">1</text><text x="112" y="89">2</text><text x="182" y="89">&lt;</text><text x="210" y="89">=</text><text x="294" y="89">8</text><text x="392" y="89">+</text><text x="490" y="89">4</text></g>
+   <g class="link"><path d="M74 99H122M98 99V132"/><path d="M173 99H219M196 99V132"/><path d="M294 99V132"/><path d="M392 99V132"/><path d="M490 99V132"/></g>
+   <g class="frame"><rect x="54" y="140" width="88" height="60" rx="4"/><rect x="250" y="140" width="88" height="60" rx="4"/><rect x="446" y="140" width="88" height="60" rx="4"/><rect x="575" y="140" width="130" height="60" rx="4"/></g>
+   <g class="warm"><rect x="152" y="140" width="88" height="60" rx="4"/><rect x="348" y="140" width="88" height="60" rx="4"/></g>
+   <g text-anchor="middle"><text x="98" y="165" class="mono">12</text><text x="196" y="165" class="mono">&lt;=</text><text x="294" y="165" class="mono">8</text><text x="392" y="165" class="mono">+</text><text x="490" y="165" class="mono">4</text><text x="640" y="165">入力の終わり</text>
+   <text x="98" y="188" class="small">数・位置０</text><text x="196" y="188" class="small">記号・位置３</text><text x="294" y="188" class="small">数・位置６</text><text x="392" y="188" class="small">記号・位置８</text><text x="490" y="188" class="small">数・位置10</text><text x="640" y="188" class="small">EOF・位置11</text></g>
+   <text x="18" y="237" class="small">空白を読み飛ばしても、元の文字位置は覚えておく → エラーを指せる。</text>
+  </svg></div></figure>
+  <p><code>&lt;=</code> は２文字で１つの演算子。１文字の <code>&lt;</code> より先に、２文字で一致するかを確かめる。空白はトークンを読む際に飛ばすので、<code>12 34</code> を勝手に <code>1234</code> に連結することはない。</p>
+  <table><thead><tr><th>トークンに持たせる情報</th><th>何に使う？</th></tr></thead><tbody><tr><td>種類</td><td>整数・記号・入力の終わりを区別する。</td></tr><tr><td>値</td><td>整数の文字列を、数値として扱えるようにする。</td></tr><tr><td>元の位置・長さ</td><td>２文字の記号を識別し、入力のどこが間違っているか示す。</td></tr><tr><td>次のトークンへのつながり</td><td>順番に読む。原書は連結リスト、観察欄は配列を使う。</td></tr></tbody></table>
+  <h3>エラーは「次に何を期待したか」と一緒に示す</h3>
+  <div class="codebox"><div class="codehead">入力の位置を保持していると、ここまで案内できる</div><pre><code>8 + * 2
+    ^
+数値または「(」が必要です。</code></pre></div>
+  <p><code>*</code> 自体は有効な記号なので字句解析は通る。けれど <code>+</code> の直後には値になる式が必要なので、構文解析で止める。</p>
+  <p><code>consume</code> と <code>expect</code> は、<strong>構文解析でトークンを読み進めるために、自作コンパイラに用意する補助関数の名前</strong>。C言語のキーワードではない。「合う」とは、今見ているトークンが、期待した記号などと一致することを指す。</p>
+  <ul>
+   <li><code>consume</code>：一致すれば、そのトークンを読み取って次へ進む。一致しなければ、読み取り位置を変えずに「一致しなかった」と呼び出し元へ返す。</li>
+   <li><code>expect</code>：一致すれば、そのトークンを読み取って次へ進む。一致しなければ、必要なトークンがないためエラーにする。</li>
+  </ul>
+  <p>最後にEOFまで読んだことも確認し、余った入力を見落とさない。</p>
+  <p class="source">概念の参照：<a href="https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/LangImpl01.html">LLVMの字句解析の解説</a>。図とエラー例は本教材独自のもの。</p>
+ </section>
+
+ <section id="tree">
+  <h2><span>03</span>式のまとまりを木にする</h2>
+  <p>トークン列には順番があるが、どの２つを掛けるかはまだ明示されていない。<strong>抽象構文木（AST）</strong>は「この演算の左と右は何か」をつなげたデータ。葉に数、枝の分岐点に演算子を置く。</p>
+  <figure><div class="scroll"><svg viewBox="0 0 760 280" role="img" aria-labelledby="ast-compare-title">
+   <title id="ast-compare-title">8+3*2と、カッコを付けた(8+3)*2は木の形が異なる</title>
+   <path d="M380 15V258" stroke="#dcded3"/>
+   <text x="178" y="29" text-anchor="middle" class="title">8 + 3 * 2 → 14</text><text x="574" y="29" text-anchor="middle" class="title">(8 + 3) * 2 → 22</text>
+   <g class="link"><path d="M178 80L100 143M178 80L254 143M254 143L205 214M254 143L306 214"/><path d="M574 80L500 143M574 80L655 143M500 143L446 214M500 143L551 214"/></g>
+   <g class="warm"><circle cx="178" cy="80" r="22"/><circle cx="254" cy="143" r="22"/><circle cx="574" cy="80" r="22"/><circle cx="500" cy="143" r="22"/></g>
+   <g class="frame"><circle cx="100" cy="143" r="22"/><circle cx="205" cy="214" r="22"/><circle cx="306" cy="214" r="22"/><circle cx="446" cy="214" r="22"/><circle cx="551" cy="214" r="22"/><circle cx="655" cy="143" r="22"/></g>
+   <g class="mono" text-anchor="middle"><text x="178" y="87">+</text><text x="254" y="150">*</text><text x="100" y="150">8</text><text x="205" y="221">3</text><text x="306" y="221">2</text><text x="574" y="87">*</text><text x="500" y="150">+</text><text x="655" y="150">2</text><text x="446" y="221">8</text><text x="551" y="221">3</text></g>
+   <text x="18" y="266" class="small">カッコをノードとして残さなくても、木のつながりが計算のまとまりを覚えている。</text>
+  </svg></div></figure>
+  <p>左の木では、足し算の右側が「掛け算の木」になっている。足すには左右の値が必要なので、右の <code>3 * 2</code> の結果を先に用意する。木のいちばん上は<strong>最後に行う演算</strong>だ。</p>
+  <h3>優先順位と、同じ強さの演算のまとまり方</h3>
+  <p>優先順位は「掛け算が足し算より強く結びつく」という規則。結合規則は、同じ強さが続いたときのまとまり方。<code>16 - 6 - 2</code> は左結合なので <code>(16 - 6) - 2</code>、結果は8。<code>16 - (6 - 2)</code> なら12になる。</p>
+  <p class="note">ASTを作る段階で決めるのは構造。ここで答えまで計算しなくてもよい。この教材のコード生成は、数や演算をそのまま命令列にする。</p>
+  <p class="source">概念の参照：<a href="https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/LangImpl02.html">LLVMの構文解析とASTの解説</a>。</p>
+ </section>
+
+ <section id="grammar">
+  <h2><span>04</span>文法を関数にする</h2>
+  <p>ここからは、前の節で見た<strong>抽象構文木（AST）を、トークン列からどう作るか</strong>を考える。入力は数や記号に分けられたトークン列、出力は「どの演算が、どの式を左右に持つか」を表す木だ。</p>
+  <p>その処理を、コンパイラの中に作る３つの関数で分担する。<code>expr()</code>・<code>mul()</code>・<code>primary()</code> はその関数名で、生成されるプログラムの関数ではない。<strong>返すのは計算結果ではなく、その部分を表すASTのノード</strong>。ノードを受け取ると、そこにつながる木全体を扱える。</p>
+  <h3>小さなまとまりを作り、それを大きなまとまりにつなぐ</h3>
+  <p>まず、最も小さいものを読む役から見る。関数名は原書の実装で使う名前であり、C言語に最初から用意されている機能ではない。</p>
+  <div class="table-scroll"><table><thead><tr><th>関数</th><th>何をするか</th><th>何を返すか</th></tr></thead><tbody>
+   <tr><td><code>primary()</code><br>数・カッコの担当</td><td>数なら、そのトークンを読んで数のノードを作る。<code>(</code> なら、中の式を <code>expr()</code> に任せ、続く <code>)</code> を確認する。</td><td>数のノード、またはカッコ内の式を表す木。</td></tr>
+   <tr><td><code>mul()</code><br>掛け算・割り算の担当</td><td>まず <code>primary()</code> に左側を読んでもらう。続きが <code>*</code> または <code>/</code> なら、右側も <code>primary()</code> に読んでもらい、演算子のノードでつなぐ。続く限り繰り返す。</td><td>掛け算・割り算の木。<strong>その演算子がなければ、最初に受け取った木をそのまま返す。</strong></td></tr>
+   <tr><td><code>expr()</code><br>足し算・引き算の担当</td><td>まず <code>mul()</code> に左側を読んでもらう。続きが <code>+</code> または <code>-</code> なら、右側も <code>mul()</code> に任せ、演算子のノードでつなぐ。続く限り繰り返す。</td><td>足し算・引き算の木。その演算子がなければ、最初に受け取った木をそのまま返す。</td></tr>
+  </tbody></table></div>
+  <p>実際の入り口は <code>expr()</code>。そこから <code>mul()</code>、さらに <code>primary()</code> を呼ぶ。<strong>呼び出しは大きなまとまりから小さなまとまりへ進み、できた木は逆向きに返ってくる。</strong></p>
+  <p>３つの関数は「次に読むトークンの位置」を共有する。読んだ分だけ位置を進めるので、呼び出した関数が戻ったら、その続きから読める。担当外の演算子は読まずに残し、それを扱う呼び出し元に任せる。</p>
+  <h3>8 + 3 * 2 を読むと、どの関数が何を返す？</h3>
+  <div id="parser-trace" class="parser-trace">
+   <p class="caption">固定式 <code>8 + 3 * 2</code> の構文解析を追う。１操作は、関数の呼び出し・トークンの読み取り・木の組み立て・関数からの戻りなど。CPUの１命令ではない。</p>
+   <div class="parser-trace-controls" role="group" aria-label="構文解析を進める操作">
+    <button type="button" class="button secondary" id="parser-trace-prev" disabled>１操作戻る</button>
+    <button type="button" class="button" id="parser-trace-next">１操作進める →</button>
+    <button type="button" class="button secondary" id="parser-trace-reset" disabled>最初から</button>
+    <span id="parser-trace-count">0 / 23</span>
+   </div>
+   <p id="parser-trace-message" role="status" aria-live="polite" aria-atomic="true">開始前。まずexpr()を呼ぶ。</p>
+   <div class="scroll"><svg viewBox="0 0 760 395" role="img" aria-labelledby="parser-trace-title parser-trace-description">
+    <title id="parser-trace-title">トークンの読み取り位置・呼び出し中の関数・作成中のAST</title>
+    <desc id="parser-trace-description">操作を進めると、現在の状態を表示する。</desc>
+    <text x="24" y="25" class="title">トークン列</text><text x="210" y="25" class="small">緑は読み取り済み。赤枠は次に読む位置。</text>
+    <g id="parser-trace-tokens"></g>
+    <path d="M250 145V379" class="link"/>
+    <text x="24" y="157" class="title">呼び出し中の関数</text>
+    <g id="parser-trace-frames"></g>
+    <text x="24" y="366" class="small">上の関数が、下の関数を呼ぶ。</text>
+    <text x="282" y="157" class="title">ここまでに作った木</text>
+    <g id="parser-trace-tree"></g>
+    <text x="282" y="389" class="small">離れた木は、まだ演算子でつなぐ前の状態。</text>
+   </svg></div>
+   <noscript><p>操作欄にはJavaScriptが必要です。下の「手順と全体図を読む」を開くと、同じ流れを確認できます。</p></noscript>
+  </div>
+  <details><summary>手順と全体図を読む</summary>
+  <ol>
+   <li><code>expr()</code> が左側を <code>mul()</code> に任せる。<code>mul()</code> は <code>primary()</code> から「8」のノードを受け取る。次は <code>+</code> なので、<strong>それを読まずに「8」を返す</strong>。</li>
+   <li><code>expr()</code> が残っていた <code>+</code> を読む。右側を作るために、もう一度 <code>mul()</code> を呼ぶ。読み取り位置は今度は「3」だ。</li>
+   <li><code>mul()</code> は <code>primary()</code> で「3」を読み、続く <code>*</code> を自分で読む。さらに <code>primary()</code> で「2」を読み、<strong>左右に3と2を持つ「*」の木</strong>を作って返す。ここでは6を計算して返すわけではない。</li>
+   <li><code>expr()</code> が、左の「8」と右の「3 * 2の木」を <code>+</code> のノードでつなぐ。これで式全体のASTができる。</li>
+  </ol>
+  <figure><div class="scroll"><svg viewBox="0 0 760 310" role="img" aria-labelledby="parse-title">
+   <title id="parse-title">8+3*2を担当する再帰下降パーサの範囲</title>
+   <text x="18" y="28" class="title">関数ごとに「読む範囲」がある</text>
+   <g class="mono" text-anchor="middle"><text x="203" y="69">8</text><text x="305" y="69">+</text><text x="407" y="69">3</text><text x="509" y="69">*</text><text x="611" y="69">2</text></g>
+   <text x="18" y="114" class="mono">expr()</text><rect x="159" y="88" width="512" height="40" rx="4" class="warm"/><text x="415" y="114" text-anchor="middle">全体を読み、足し算の木を返す</text>
+   <text x="18" y="172" class="mono">mul()</text><rect x="159" y="146" width="88" height="40" rx="4" class="frame"/><rect x="363" y="146" width="308" height="40" rx="4" class="frame"/><text x="203" y="172" text-anchor="middle">8</text><text x="517" y="172" text-anchor="middle">3 * 2 をまとめて返す</text>
+   <text x="18" y="230" class="mono">primary()</text><g class="frame"><rect x="159" y="204" width="88" height="40" rx="4"/><rect x="363" y="204" width="88" height="40" rx="4"/><rect x="567" y="204" width="104" height="40" rx="4"/></g><g text-anchor="middle"><text x="203" y="230">8</text><text x="407" y="230">3</text><text x="619" y="230">2</text></g>
+   <text x="18" y="280" class="small">primary() が「(」を見つけたら、カッコ内を expr() に任せる。</text><text x="18" y="303" class="small">戻ってきたら「)」を確認する。この呼び直しが、入れ子の式を読める理由。</text>
+  </svg></div></figure>
+  </details>
+  <p>足し算の右側を読むときに <code>mul()</code> を呼ぶから、<code>3 * 2</code> がひとまとまりで返ってくる。<strong>この呼び分けによって、掛け算・割り算が足し算・引き算より強く結びつく木になる。</strong></p>
+  <p>カッコの場合は、<code>primary()</code> が <code>(</code> を読んだあとで <code>expr()</code> を呼び、カッコ内の式を丸ごと読んでもらう。戻ってきたら <code>expect</code> で <code>)</code> を確認する。こうして関数を呼び直すので、カッコが入れ子になっていても同じ仕組みで読める。このように、文法の規則に対応する関数を呼び合って木を作る方法が<strong>再帰下降構文解析</strong>だ。</p>
+  <h3>この分担を、文法の記号で短く書く</h3>
+  <p>文法は「どんなトークンの並びを式として認めるか」という約束。ここまでの３つの関数の読み方を、EBNFという文法の表記でまとめると次のようになる。<code>num</code> は整数トークンを表す。</p>
+  <div class="codebox"><div class="codehead">四則演算とカッコの文法（EBNF）</div><pre><code>expr    = mul (("+" | "-") mul)*
+mul     = primary (("*" | "/") primary)*
+primary = num | "(" expr ")"</code></pre></div>
+  <p>１行目は「まず <code>mul</code> を読み、そのあと『<code>+</code> または <code>-</code> と、次の <code>mul</code>』を０回以上読む」という意味。足し算・引き算がない式も、最初の <code>mul</code> だけで認められる。</p>
+  <p><code>|</code> は「どちらか」、引用符の外の <code>*</code> は「直前のまとまりを０回以上繰り返す」。引用符付きの <code>"*"</code> は、入力に現れる掛け算記号そのものだ。引用符の外のカッコは文法のまとまりを表し、<code>"("</code> と <code>")"</code> は入力のカッコを表す。</p>
+  <p class="caption"><code>expr</code> など、別の規則を参照する名前を非終端記号という。<code>"+"</code> など入力に現れる記号や、数を表す <code>num</code> は、この文法の終端にあたる。文法中の <code>=</code> は規則の定義であり、Cの代入ではない。</p>
+  <h3>左結合は、できた木を左側に付け直して作る</h3>
+  <div class="codebox"><div class="codehead">expr() の考え方を表す疑似コード</div><pre><code>左の木 = mul()
+次が + または - の間、繰り返す:
+    演算子を読む
+    右の木 = mul()
+    左の木 = 演算子(左の木, 右の木)
+左の木を返す</code></pre></div>
+  <p>この更新で、<code>16 - 6</code> の木が次の引き算の左側になる。<code>mul()</code> が自分の担当外の <code>+</code> を見たら、それを消費せずに戻ることも大切だ。</p>
+ </section>
+
+ <section id="stack">
+  <h2><span>05</span>途中結果をスタックへ</h2>
+  <p>木の形がわかっても、右側を計算している間、左側の値をどこかに残す必要がある。第１章で戻り先を保存した<strong>同じスタックの仕組み</strong>を、今度は計算途中の値に使う。</p>
+  <p>生成するコードには約束を１つ置く。<strong>「式１つを計算すると、スタックに結果を１つ残す」</strong>。左の式も右の式もこの約束を守れば、取り出して演算し、結果を積むだけで組み合わせられる。</p>
+  <figure><div class="scroll"><svg viewBox="0 0 760 269" role="img" aria-labelledby="stack-trace-title">
+   <title id="stack-trace-title">8+3*2の途中結果がスタックに積まれ、１つにまとまる</title>
+   <text x="18" y="28" class="title">8 + 3 * 2 の計算順：数を積む → 掛ける → 足す</text>
+   <g class="small" text-anchor="middle"><text x="81" y="64">8を積む</text><text x="229" y="64">3を積む</text><text x="377" y="64">2を積む</text><text x="525" y="64">3 × 2</text><text x="673" y="64">8 ＋ 6</text></g>
+   <g class="frame"><rect x="36" y="166" width="90" height="39"/><rect x="184" y="166" width="90" height="39"/><rect x="184" y="127" width="90" height="39"/><rect x="332" y="166" width="90" height="39"/><rect x="332" y="127" width="90" height="39"/><rect x="332" y="88" width="90" height="39"/><rect x="480" y="166" width="90" height="39"/></g>
+   <g class="warm"><rect x="480" y="127" width="90" height="39"/><rect x="628" y="166" width="90" height="39"/></g>
+   <g class="mono" text-anchor="middle"><text x="81" y="193">8</text><text x="229" y="193">8</text><text x="229" y="154">3</text><text x="377" y="193">8</text><text x="377" y="154">3</text><text x="377" y="115">2</text><text x="525" y="193">8</text><text x="525" y="154">6</text><text x="673" y="193">14</text></g>
+   <g fill="#ac4b30"><path d="M141 157L159 165L141 173Z"/><path d="M289 157L307 165L289 173Z"/><path d="M437 157L455 165L437 173Z"/><path d="M585 157L603 165L585 173Z"/></g>
+   <text x="18" y="240" class="small">各列の上側がスタックトップ。この式の一時値だけを表示し、戻り先などは省略。</text><text x="18" y="263" class="small">数は値であり、アドレスではない。８バイト積むたびにRSPは８減る。</text>
+  </svg></div></figure>
+  <h3>木をたどる順序が、そのまま命令を出す順序になる</h3>
+  <p>数のノードでは値を積む命令を出す。演算子のノードでは<strong>左の木 → 右の木 → 演算</strong>の順にコードを出す。後から積んだ右の値が先に出てくるので、引き算・割り算では取り出し順を間違えない。</p>
+  <div class="columns"><div class="codebox"><div class="codehead">減算：左の値 − 右の値</div><pre><code>pop rdi       # 右の値
+pop rax       # 左の値
+sub rax, rdi
+push rax      # 結果を１つ戻す</code></pre></div><div class="codebox"><div class="codehead">符号付きの割り算</div><pre><code>pop rdi       # 割る数
+pop rax       # 割られる数
+cqo
+idiv rdi
+push rax      # 商を戻す</code></pre></div></div>
+  <p><code>idiv rdi</code> はRDXとRAXをつないだ値をRDIで割る。<code>cqo</code> はRAXの符号をRDX側へ伸ばし、割り算の入力を整える。商はRAX、余りはRDX。ここで使う整数の割り算は小数部分をゼロ方向に切り捨てるので、<code>-7 / 2</code> は <code>-3</code> になる。</p>
+  <p class="note">式全体の結果を最後に <code>pop rax</code> で取り出すと、一時的に積んだ分がすべてなくなり、RSPは元に戻る。その後の <code>ret</code> が取り出すのは、計算結果ではなく呼び出し元への戻り先。前章のスタックの話につながる。</p>
+ </section>
+
+ <section id="operators">
+  <h2><span>06</span>符号と比較を加える</h2>
+  <p>ここまでは、四則演算とカッコを扱うコンパイラを作ってきた。この節では、<strong>数の前に符号を付ける式</strong>と、<strong>２つの値を比較する式</strong>も扱えるようにする。</p>
+  <div class="table-scroll"><table><thead><tr><th>追加したい式</th><th>実行すると何が得られる？</th></tr></thead><tbody>
+   <tr><td><code>-3</code>、<code>+3</code></td><td>符号を反転した値、またはそのままの値。この例では−3と3。</td></tr>
+   <tr><td><code>3 &lt; 8</code>、<code>3 == 8</code></td><td>条件が成り立てば1、成り立たなければ0。この例では1と0。</td></tr>
+  </tbody></table></div>
+  <p>やることは今までと同じで、<strong>式を読んでASTを作り、その木から命令を出す</strong>。以下の計算や比較は、その命令を実行するときに行われる。構文解析中に答えを求める話ではない。</p>
+
+  <h3>① 符号：−3を「0から3を引く」と考える</h3>
+  <p><code>8 - 3</code> の <code>-</code> は、左の8から右の3を引く。いっぽう、<code>-3</code> には左の数がなく、右の3の符号を反転する。この違いを、トークンを読む構文解析の段階で見分ける。</p>
+  <p>そこで、数やカッコを読む <code>primary()</code> の手前に、符号を読む <code>unary()</code> を追加する。<code>mul()</code> は、これまでの <code>primary()</code> の代わりに <code>unary()</code> を呼ぶ。<code>unary()</code> は先頭の符号があれば読み、その後の数やカッコを <code>primary()</code> に任せる。</p>
+  <p><strong><code>-3</code> を読んだら、左に0、右に3を持つ「引き算の木」を作る。</strong>そうすれば、すでに作った減算の命令生成をそのまま使える。<code>+3</code> なら、3のノードをそのまま返せばよい。符号がない場合も、読んだ木をそのまま返す。</p>
+  <p class="caption">値１つを受け取る符号の操作を「単項演算」、２つを受け取る引き算などを「二項演算」という。この段階の文法で読める単項の符号は１つまで。<code>-(-3)</code> は読めるが、<code>--3</code> は扱わない。</p>
+
+  <h3>② 比較：「成り立つ？」の答えを0か1にする</h3>
+  <p>比較も、足し算と同じように左右の式を持つASTにする。違うのは、<strong>結果が「真なら1、偽なら0」になること</strong>。<code>3 &lt; 8</code> なら1、<code>3 == 8</code> なら0になる。<code>==</code> は「等しいか」を調べる記号だ。</p>
+  <p>結果を整数にそろえれば、比較でも前節の「式１つにつき、スタックに結果を１つ残す」という約束を守れる。左右の値を取り出し、比較して0か1を作り、それをスタックに積めばよい。</p>
+
+  <h3>「等しいか」を調べる命令は、どう作る？</h3>
+  <p>以下は <code>==</code> のために出す命令。左右の式の値は、前節と同じく左、右の順でスタックに積んであるものとする。</p>
+  <div class="codebox"><div class="codehead">等しいなら1、違うなら0をスタックに残す（Intel記法）</div><pre><code>pop rdi        # 右の値を取り出す
+pop rax        # 左の値を取り出す
+cmp rax, rdi   # 比較の状態をフラグに記録する
+sete al        # 等しければ1、違えば0をALに入れる
+movzx rax, al  # RAX全体を、その0か1にそろえる
+push rax       # 比較結果をスタックに積む</code></pre></div>
+  <p><strong><code>cmp</code> だけでは、RAXに0や1は入らない。</strong>比較の状態は、CPU内部の「フラグ」という状態を記録するビットに残る。<code>sete</code> がその状態を見て、等しければ1、違えば0をALに書く。</p>
+  <p>ALは別のレジスタ領域ではなく、<strong>RAXの下位８ビットを指す名前</strong>。ALだけを書き換えても、RAXの残りの56ビットは以前のままなので、<code>movzx</code> でそこをゼロにする。これでRAX全体を、整数の0か1として使える。</p>
+  <figure><div class="scroll"><svg viewBox="0 0 760 218" role="img" aria-labelledby="compare-title compare-desc">
+   <title id="compare-title">比較の状態を、スタックに積める整数の0か1へ変える</title>
+   <desc id="compare-desc">cmpはフラグを更新し、RAXの値はそのまま。seteは等しければALに1、違えば0を書く。movzxはALをRAXへゼロ拡張し、RAX全体を0か1にする。その後push raxで結果をスタックに積む。</desc>
+   <text x="18" y="29" class="title">図で追うのは、比較して「整数の0か1」を作る３命令</text>
+   <g class="frame"><rect x="16" y="54" width="215" height="104" rx="4"/><rect x="271" y="54" width="215" height="104" rx="4"/></g><rect x="526" y="54" width="218" height="104" rx="4" class="warm"/>
+   <g text-anchor="middle">
+    <text x="123" y="83" class="mono">cmp rax, rdi</text><text x="123" y="111">比較の状態 → フラグ</text><text x="123" y="140" class="small">RAXの値はまだ変わらない</text>
+    <text x="378" y="83" class="mono">sete al</text><text x="378" y="111">等しい：1 ／ 違う：0</text><text x="378" y="140" class="small">RAXの下位８ビットに書く</text>
+    <text x="635" y="83" class="mono">movzx rax, al</text><text x="635" y="111">RAX全体を0か1へ</text><text x="635" y="140" class="small">残りの56ビットをゼロに</text>
+   </g>
+   <g fill="#ac4b30"><path d="M242 96L260 104L242 112Z"/><path d="M497 96L515 104L497 112Z"/></g>
+   <text x="18" y="190" class="small">最後に push rax で結果を積む。足し算と同じく、２つの値から１つの値ができる。</text>
+   <text x="18" y="213" class="small">ここでの movzx はゼロ拡張の命令。原書の movzb に対応する表記。</text>
+  </svg></div></figure>
+  <p>図は「等しいか」の場合。大小比較では、<code>sete</code> の代わりに、調べたい条件に対応する命令を使う。<strong>比較の状態を見て0か1を作り、スタックに積む</strong>という流れは共通だ。</p>
+  <details><summary>補足：大小比較で、作る命令の種類を減らす</summary><p><code>a &gt; b</code> は <code>b &lt; a</code> と同じ大小関係を調べる。<code>&gt;</code> と <code>&gt;=</code> のASTを、左右を交換した <code>&lt;</code> と <code>&lt;=</code> の木に直せば、命令生成を共用できる。ここでは、式の値が評価順序に影響されない、この電卓言語の範囲を扱う。</p></details>
+  <details><summary>比較まで含めた文法を見渡す</summary>
+   <p>04で加減算を担当していた規則を <code>add</code> と呼び、式全体の入り口 <code>expr</code> から比較の規則を呼ぶようにする。<code>equality</code> は等しい・等しくないの比較、<code>relational</code> は大小比較、<code>unary</code> は単項の符号を担当する。</p>
+   <div class="codebox"><pre><code>expr       = equality
+equality   = relational (("==" | "!=") relational)*
+relational = add (("&lt;" | "&lt;=" | "&gt;" | "&gt;=") add)*
+add        = mul (("+" | "-") mul)*
+mul        = unary (("*" | "/") unary)*
+unary      = ("+" | "-")? primary
+primary    = num | "(" expr ")"</code></pre></div>
+   <p><code>?</code> は０回か１回。下の層ほど強く結びつく。<code>1 + 2 &lt; 4</code> は <code>(1 + 2) &lt; 4</code> と読まれる。等値・大小比較も左結合で、数学の連鎖比較とは異なる。</p>
+  </details>
+ </section>
+
+ <section id="observe">
+  <h2><span>07</span>変換の流れを観察する</h2>
+  <p>式を変えると、トークン・AST・アセンブリが一緒に変わる。「１操作進める」で、生成コードが行うスタック操作を追ってみよう。</p>
+  <div class="lab">
+   <form id="expression-form"><label for="expression">変換する式</label><div class="input-row"><input id="expression" name="expression" value="8 + 3 * 2" maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="lab-limits"><button type="submit" class="button">式を変換する</button></div></form>
+   <div class="presets" aria-label="観察する式を選ぶ"><button type="button" data-expression="8 + 3 * 2">8 + 3 * 2</button><button type="button" data-expression="(8 + 3) * 2">(8 + 3) * 2</button><button type="button" data-expression="16 - 6 - 2">16 - 6 - 2</button><button type="button" data-expression="-7 / 2">-7 / 2</button><button type="button" data-expression="3 * 4 == 12">3 * 4 == 12</button><button type="button" data-expression="8 + * 2">8 + * 2</button></div>
+   <p id="lab-limits" class="caption">整数・四則演算・カッコ・単項符号・６種類の比較に対応。表示のため120文字・47ノードまで。整数リテラルは0〜2147483647、途中結果は符号付き64ビットの範囲。範囲超過とゼロ除算は観察を停止する。</p>
+   <div id="expression-error" class="error" role="alert"></div>
+   <div id="lab-output" class="lab-result" hidden>
+    <h3>① トークン列</h3><div id="token-output" class="tokens"></div>
+    <h3>② 抽象構文木</h3><figure><div class="tree-scroll"><svg id="ast-svg" role="img" aria-label="入力した式の抽象構文木"></svg></div><figcaption>茶色の枠＝直前に操作したノード。単項マイナスは0からの減算、大小の「&gt;」は左右を入れ替えた「&lt;」に変換して表示。</figcaption></figure>
+    <div class="lab-lower"><div><h3>③ 生成したアセンブリ</h3><div class="codebox"><pre id="assembly-output" class="assembly"></pre></div></div><div><h3>④ 実行時のスタックを観察</h3><div class="stack-panel"><svg id="stack-svg" role="img" aria-label="計算途中の値を保持するスタック"></svg><div id="step-text" role="status" aria-live="polite"></div></div></div></div>
+    <div class="controls"><button class="button secondary" id="step-back" type="button">１つ戻る</button><button class="button" id="step-next" type="button">１操作進める →</button><button class="button secondary" id="step-reset" type="button">最初から</button><span id="step-count"></span></div>
+    <p id="total-result"></p>
+   </div>
+   <noscript><p>観察欄にはJavaScriptが必要です。本文とSVG図はそのまま読めます。</p></noscript>
+  </div>
+  <p class="note">アセンブリは実際に生成するが、このページ内で機械語にして実行するわけではない。スタック表示は同じASTから作った操作列のシミュレーション。１操作は数を積むか、２つの値を演算する単位で、CPUの１命令とは限らない。</p>
+ </section>
+
+ <section id="check">
+  <h2><span>08</span>理解を確かめる</h2>
+  <h3>確認するのは、出力した文字だけではない</h3>
+  <p>実装の確認では、入力を自作コンパイラに渡し、出力したアセンブリをアセンブル・リンクして、できた実行ファイルの結果を確かめる。<code>make</code> はビルドを繰り返せる形にし、テストは機能を追加したときに以前の式が壊れていないか確かめる役割を持つ。</p>
+  <p class="note">式の計算結果と、シェルで見る終了ステータスは区別する。Unixの終了ステータスとして観察できるのは下位８ビットなので、256は0、−1は255になる。原書のテストでは、式全体の結果を0〜255に収めると比較しやすい。観察欄は計算結果そのものと、下位８ビットの両方を表示する。</p>
+  <details><summary>トークナイザは「掛け算が先」と決める？</summary><p>数と記号に区切るところまで。演算のまとまりを文法に従ってASTにするのはパーサ。生成器は、その木が示す構造に沿ってコードを出す。</p></details>
+  <details><summary>スタックから右の値が先に出るのはなぜ？</summary><p>生成器が左の式、右の式の順で結果を積むから。後から積んだ右が先に出る。引き算では「先に出た値から引く」と逆の計算になる。</p></details>
+  <details><summary>最後の pop rax を忘れると、なぜ困る？</summary><p>返り値をRAXに置けず、計算結果がスタックに残る。直後のretはその計算結果を戻り先として取り出してしまう。生成コードは式の結果を取り出し、スタックを元の深さに戻す必要がある。</p></details>
+  <details><summary>cmp の直後、RAXはもう0か1になっている？</summary><p>まだ。cmpは比較の状態をフラグに残す。条件に応じてALを0か1にし、それをRAX全体へゼロ拡張してから、整数として扱える。</p></details>
+  <details><summary>1 &lt; 2 &lt; 1 は、数学と同じように読める？</summary><p>この文法では左結合なので、(1 &lt; 2) &lt; 1 → 1 &lt; 1 → 0。２つの比較を同時に満たすか、という数学の読み方ではない。</p></details>
+  <details><summary>どんな入力をテストに入れると、読み違いに気づける？</summary><p>優先順位とカッコ、左結合の減算、空白を含む式、負の割り算、真と偽の比較、そして数の欠落や閉じカッコの不足。正しい式が動くことと、不正な式が拒否されることの両方を確認する。</p></details>
+ </section>
+ <section class="sources" id="sources"><h3>原書と参照先</h3><ul>
+  <li><a href="https://www.sigbus.info/compilerbook#電卓レベルの言語の作成">植山 類『低レイヤを知りたい人のためのCコンパイラ作成入門』「電卓レベルの言語の作成」</a> — 学習範囲とステップの対応。</li>
+  <li><a href="https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/LangImpl01.html">LLVM公式教材：字句解析</a>・<a href="https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/LangImpl02.html">構文解析とAST</a> — 概念の補助資料。原書とは異なる言語を扱う。</li>
+  <li><a href="https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html">Intel命令セット資料</a> — PUSH・POP・IDIV・CQO・CMP・SETcc・MOVZXの仕様。</li>
+ </ul><div class="footer"><a href="index.html">← 第１章：機械語とアセンブラ</a><a href="linking.html">第３章：分割コンパイルとリンク →</a></div></section>
+</main>
+</body>
+</html>

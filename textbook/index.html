@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="機械語とアセンブラを、図解・実行の観察・自分の言葉で学ぶ個人用教科書。">
+<title>機械語とアセンブラ｜自分で育てる教科書</title>
+<style>
+:root{--paper:#f8f6f0;--ink:#292e2b;--muted:#666d66;--line:#dcded3;--accent:#ac4b30;--green:#355d4c;--soft:#e9eee5;--code:#242e29}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:30px}body{margin:0;background:var(--paper);color:var(--ink);font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;font-size:15px;line-height:1.9}a{color:var(--green);text-underline-offset:4px}button,textarea{font:inherit}button,a,summary,textarea{touch-action:manipulation}button{cursor:pointer}button:disabled{cursor:default;opacity:.4}button:focus-visible,a:focus-visible,summary:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:4px}.skip{position:absolute;left:20px;top:-100px;background:white;padding:8px;z-index:5}.skip:focus{top:10px}
+.sidebar{position:fixed;width:250px;height:100vh;padding:40px 28px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:var(--paper)}.brand{font-size:13px;font-weight:700;letter-spacing:.12em}.brand-mark{display:inline-grid;place-items:center;background:var(--green);color:white;width:30px;height:32px;margin-right:10px;border-radius:3px}.volume{font-size:12px;color:var(--muted);margin:30px 0 14px}.sidebar nav{display:grid;gap:5px}.sidebar nav a{text-decoration:none;color:var(--muted);font-size:13px;padding:9px 10px;border-left:2px solid transparent}.sidebar nav a:hover,.sidebar nav a[aria-current]{border-color:var(--accent);color:var(--accent);background:#efece3}.navno{font-family:monospace;margin-right:12px;opacity:.7}.sidebar-bottom{margin-top:auto;font-size:11px;color:var(--muted);line-height:1.8}.sidebar-bottom a{font-size:12px}main{margin-left:250px;max-width:1160px;padding:48px 64px 70px}.topline{display:flex;justify-content:space-between;gap:12px;font-size:11px;color:var(--muted);letter-spacing:.07em;border-bottom:1px solid var(--line);padding-bottom:16px}.badge{color:var(--green)}header{padding:52px 0 38px;position:relative}.eyebrow{font-size:12px;color:var(--accent);letter-spacing:.14em;font-weight:700}.chapter-number{font-family:Georgia,serif;font-size:88px;line-height:1;color:#dddccb;position:absolute;right:0;top:50px}h1{font-family:"Hiragino Mincho ProN","Yu Mincho",serif;font-size:clamp(28px,3.4vw,43px);line-height:1.5;font-weight:600;margin:18px 80px 18px 0;letter-spacing:.025em}.lede{color:var(--muted);max-width:620px;font-size:15px}.goal{display:flex;gap:18px;background:var(--soft);padding:19px 24px;margin-top:26px;align-items:baseline}.goal b{white-space:nowrap;color:var(--green);font-size:12px}.goal p{margin:0;font-size:14px}section{border-top:1px solid var(--line);padding:38px 0 40px}h2{font-size:24px;line-height:1.6;font-family:"Hiragino Mincho ProN","Yu Mincho",serif;margin:0 0 20px;font-weight:600}h2 .num{font-size:12px;color:var(--accent);font-family:monospace;margin-right:14px;vertical-align:middle}h3{font-size:16px;margin:24px 0 9px}p{margin:12px 0}strong{font-weight:650}code{font-family:"SFMono-Regular",Consolas,monospace;font-size:.9em}p code,li code,td code,summary code{background:#e9e9df;padding:2px 5px;border-radius:3px}.note{border-left:2px solid var(--accent);padding:0 0 0 17px;color:var(--muted);font-size:13px;margin:22px 0 0}.caption{font-size:12px;color:var(--muted);line-height:1.8;margin-top:12px}.diagram{background:#fffef9;border:1px solid var(--line);padding:24px;margin:22px 0;border-radius:5px}.hardware{display:grid;grid-template-columns:1fr 75px 1.2fr;align-items:center}.unit{border:1px solid #b7c4b7;border-radius:4px;padding:16px}.unit b{color:var(--green)}.registers{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}.registers span{background:var(--soft);padding:5px 10px;font-family:monospace;font-size:12px}.memory{display:grid;grid-template-columns:repeat(6,1fr);margin-top:12px}.memory span{border:1px solid var(--line);padding:9px 0;text-align:center;font-family:monospace;font-size:12px}.arrow{text-align:center;font-size:22px;color:var(--accent)}.arrow small{display:block;font-size:10px}.flow{display:grid;grid-template-columns:1fr 24px 1fr 24px 1fr 24px 1fr;align-items:center}.flow div{text-align:center}.flow b{display:block;font-size:13px}.flow small{font-size:10px;color:var(--muted)}.flow .focus{border:1px solid var(--green);background:var(--soft);padding:12px 5px;border-radius:3px}.flow .arrow{font-size:18px}.toolrow{display:flex;gap:12px;flex-wrap:wrap;margin-top:17px}.toolrow span{font-size:12px;color:var(--muted)}
+.codebox{background:var(--code);color:#e6eee4;border-radius:5px;overflow:hidden;margin:20px 0}.codehead{padding:10px 18px;border-bottom:1px solid #ffffff20;font-size:11px;letter-spacing:.04em;color:#c0cbbc}pre{margin:0;padding:20px;overflow:auto;line-height:1.9;font-size:14px}.codebox .comment{color:#afbea9}.codebox .op{color:#eab485}.columns{display:grid;grid-template-columns:1fr 1fr;gap:20px}.columns .codebox{margin:0}.decode{display:grid;grid-template-columns:.8fr 1.3fr 1fr;gap:14px;font-size:13px}.decode code{display:block;color:var(--accent);font-size:15px;margin-bottom:6px}.decode span{color:var(--muted);font-size:12px}table{border-collapse:collapse;width:100%;font-size:13px}th{text-align:left;color:var(--muted);font-size:12px;font-weight:500}td,th{padding:12px 8px;border-bottom:1px solid var(--line);vertical-align:top}th:first-child,td:first-child{padding-left:0}details{border-bottom:1px solid var(--line);padding:15px 0}summary{cursor:pointer;font-size:14px;font-weight:600}details p{font-size:13px;color:var(--muted);padding-left:18px}.lab{border:1px solid #b9c7ba;border-radius:6px;overflow:hidden;margin:23px 0 16px;background:#fffef9}.lab-title{padding:13px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--green)}.lab-body{display:grid;grid-template-columns:1.1fr 1fr}.program{background:var(--code);color:#e2e9df;padding:18px 0;font-family:monospace;font-size:13px;line-height:2}.program .label{color:#a8b6a1;padding:0 20px;font-size:11px}.instruction{padding:2px 20px;border-left:3px solid transparent;white-space:pre}.instruction.active{background:#495947;border-color:#eab485;color:white}.instruction span{color:#a2b39d;display:inline-block;width:33px;font-size:11px}.state{padding:18px 20px}.state-title{font-size:11px;color:var(--muted);margin-bottom:10px}.regs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.reg{background:var(--soft);padding:8px;text-align:center}.reg small{display:block;font-size:10px;color:var(--green)}.reg output{font-family:monospace;font-size:24px}.stack{border:1px dashed #a7b5a3;padding:12px;margin-top:12px;font-size:12px;min-height:76px}.stack b{display:block;font-family:monospace;font-weight:400;color:var(--accent)}.controls{border-top:1px solid var(--line);padding:16px 20px;display:flex;align-items:center;gap:10px}.button{border:1px solid var(--green);background:var(--green);color:white;padding:8px 16px;border-radius:4px;font-size:12px}.button.secondary{background:transparent;color:var(--green)}#step-counter{margin-left:auto;font-family:monospace;font-size:12px;color:var(--muted)}#explanation{font-size:13px;min-height:56px;padding:0 20px 16px;margin:0}.question{display:inline-block;color:var(--accent);font-family:monospace;margin-right:10px}.notes{background:#fffef9;border:1px solid var(--line);padding:22px;border-radius:4px}.notes label{display:block;font-size:13px;font-weight:600;margin-bottom:9px}textarea{display:block;width:100%;min-height:160px;border:1px solid #bfc6ba;border-radius:3px;background:transparent;padding:13px;resize:vertical;font-size:14px;line-height:1.9;color:var(--ink)}.notes-actions{display:flex;gap:12px;align-items:center;margin-top:12px}#save-status{font-size:11px;color:var(--muted)}.sources{font-size:12px;color:var(--muted);padding-bottom:0}.sources ol{padding-left:20px}.sources li{margin:8px 0}.footer{margin-top:28px;border-top:1px solid var(--line);padding-top:18px;font-size:11px;display:flex;justify-content:space-between;color:var(--muted)}
+@media(min-width:1450px){main{margin-left:calc(250px + (100vw - 1450px)/2)}}@media(max-width:1050px){.sidebar{width:205px;padding:30px 18px}main{margin-left:205px;padding:35px 32px}.lab-body{grid-template-columns:1fr 1fr}.instruction{padding-left:12px;padding-right:6px}.state{padding:15px}.chapter-number{font-size:70px}}@media(max-width:760px){.sidebar{position:static;width:auto;height:auto;padding:18px 20px;border-right:0;border-bottom:1px solid var(--line)}.volume,.sidebar-bottom{display:none}.sidebar nav{display:flex;overflow:auto;gap:4px;margin-top:15px}.sidebar nav a{white-space:nowrap;padding:4px 10px;font-size:12px}.navno{display:none}main{margin:0;padding:25px 22px 40px}.topline{font-size:10px}header{padding:32px 0}.chapter-number{top:38px;font-size:54px}h1{font-size:29px;margin-right:40px}h2{font-size:22px}.goal{display:block;padding:16px}.goal p{margin-top:5px}.hardware{grid-template-columns:1fr}.hardware .arrow{padding:6px;transform:rotate(90deg)}.hardware .arrow small{display:none}.columns,.lab-body{grid-template-columns:1fr}.decode{grid-template-columns:1fr;gap:18px}.flow{grid-template-columns:1fr 18px 1fr}.flow>.arrow:nth-child(4){display:none}.flow>div:nth-child(n+5){margin-top:18px}.diagram{padding:18px}.lab-title{font-size:11px}.instruction{padding-left:20px}.caption{font-size:11px}.notes-actions{align-items:flex-start;flex-direction:column}.footer{gap:12px}.controls{padding:14px}.button{padding:8px 12px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}@media print{.sidebar,.topline,.controls,.notes-actions,.skip{display:none}main{margin:0;padding:0;max-width:none}body{background:white;font-size:11pt}header{padding-top:0}section{padding:20px 0}h2{break-after:avoid}.diagram,.codebox,.lab,.notes{break-inside:avoid}.codebox,.program{background:#f0f0ec;color:#222}.codebox .comment,.program .label{color:#555}.instruction.active{background:#ddd;color:#111}textarea{min-height:130px}a{color:inherit}.chapter-number{top:0}}
+figure.diagram{margin:22px 0;overflow-x:auto}figure svg{width:100%;height:auto;display:block;min-width:530px}.svg-heading{font-size:20px;font-weight:600;fill:#355d4c}.svg-small{font-size:15px;fill:#666d66}.svg-text{font-size:16px;fill:#292e2b}.svg-mono{font-family:monospace;font-size:21px}.diagram:has(svg){scrollbar-width:thin}@media(max-width:760px){figure.diagram::after{content:"図は横にスクロールできます";display:block;font-size:10px;color:var(--muted);margin-top:10px}}
+</style>
+<link rel="stylesheet" href="navigation.css?v=2">
+<script src="navigation.js?v=2" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">本文へ移動</a>
+<button id="navigation-toggle" class="navigation-toggle" type="button" aria-controls="textbook-navigation" aria-expanded="true" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM10 5v14"/></svg><span>ナビを閉じる</span></button>
+<aside class="sidebar" id="textbook-navigation">
+ <div class="brand"><span class="brand-mark" aria-hidden="true">本</span>自分で育てる教科書</div>
+ <div class="volume">コンパイラをつくる / 第１章<br><a href="calculator.html"><span>第２章：電卓レベルの言語</span><span aria-hidden="true">→</span></a><br><a href="linking.html"><span>第３章：分割コンパイルとリンク</span><span aria-hidden="true">→</span></a><br><a href="functions.html"><span>第４章：関数とローカル変数</span><span aria-hidden="true">→</span></a><br><a href="integers.html"><span>第５章：コンピュータにおける整数の表現</span><span aria-hidden="true">→</span></a><br><a href="pointers.html"><span>第６章：ポインタと文字列リテラル</span><span aria-hidden="true">→</span></a><br><a href="program.html"><span>第７章：プログラムの実行イメージと初期化式</span><span aria-hidden="true">→</span></a><br><a href="dynamic-linking.html"><span>第８章：スタティックリンクとダイナミックリンク</span><span aria-hidden="true">→</span></a><br><a href="types.html"><span>第９章：Cの型の構文</span><span aria-hidden="true">→</span></a></div>
+ <nav aria-label="この章の目次">
+  <a href="#machine" aria-current="location"><span class="navno">01</span>CPUの見ている世界</a>
+  <a href="#translation"><span class="navno">02</span>言葉から機械語へ</a>
+  <a href="#reading"><span class="navno">03</span>アセンブリを読む</a>
+  <a href="#call"><span class="navno">04</span>呼び出して、戻る</a>
+  <a href="#check"><span class="navno">05</span>理解を確かめる</a>
+ </nav>
+ <div class="sidebar-bottom">少し読んで、仕組みを追って、<br>自分の言葉にしてみる。<br><br><a href="https://www.sigbus.info/compilerbook#機械語とアセンブラ" target="_blank" rel="noreferrer">原書の章を開く ↗</a></div>
+</aside>
+<main id="main">
+ <div class="topline"><span>低レイヤを知るための学習ノート</span><span class="badge">第１版 · 2026.09.14</span></div>
+ <header>
+  <div class="eyebrow">第１章 / コンパイラの出力を知る</div>
+  <h1>機械語と<br>アセンブラ</h1>
+  <p class="lede">ソースコードの向こう側で、何が起きているのか。<br>命令・値・実行位置の３つを手がかりに、CPUの動きを読み解く。</p>
+  <div class="goal"><b>この章の到達点</b><p>「コンパイラが何を出力するか」と「関数からどう戻るか」を、自分の言葉で説明できる。</p></div>
+  <p class="caption">対象：x86-64・Linux・Intel記法。原書の章を入口にした、自作の図解と確認問題を含む補助教材です。<a href="https://www.sigbus.info/compilerbook#機械語とアセンブラ">原書を読む ↗</a></p>
+ </header>
+
+ <section id="machine">
+  <h2><span class="num">01</span>CPUの見ている世界</h2>
+  <p>プログラムの実行を追うときは、<strong>どの命令を読むか</strong>と<strong>どこに値があるか</strong>を分けて見る。命令もデータもメモリにあり、CPUは命令を読み、レジスタやメモリの状態を変えていく。</p>
+  <figure class="diagram">
+   <svg viewBox="0 0 720 514" role="img" aria-labelledby="hardware-title hardware-desc" xmlns="http://www.w3.org/2000/svg">
+    <title id="hardware-title">CPU内部のRIP・RAX・RSPとメモリ</title>
+    <desc id="hardware-desc">３つともCPU内部の記憶領域であるレジスタ。RIPは実行する命令のアドレスを保持し、処理や分岐で更新される。RAXは計算に使う値や結果を保持し、本書の環境では整数の返り値にも使う。RSPはメモリ上のスタックの先頭アドレスを保持する。戻り先などのデータ自体はメモリにある。RAXにもアドレスを入れられる。</desc>
+    <defs><marker id="arrowhead" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#ac4b30"/></marker></defs>
+    <rect x="1" y="12" width="365" height="441" rx="6" fill="#f8f6f0" stroke="#b7c4b7"/>
+    <text x="22" y="45" class="svg-heading">CPU</text>
+    <text x="22" y="73" class="svg-small">レジスタ＝CPU内部の小さな記憶領域</text>
+    <rect x="20" y="94" width="326" height="101" rx="4" fill="#e9eee5"/>
+    <text x="35" y="122" class="svg-text" font-weight="600">RIP ｜ どの命令を実行するか</text>
+    <text x="35" y="149" class="svg-small">命令の位置（アドレス）を保持する。</text>
+    <text x="35" y="176" class="svg-small">処理が進むと更新され、分岐で移る。</text>
+    <rect x="20" y="212" width="326" height="101" rx="4" fill="#f2e9dc"/>
+    <text x="35" y="240" class="svg-text" font-weight="600">RAX ｜ どんな値を扱うか</text>
+    <text x="35" y="267" class="svg-small">計算する値や結果を保持する。</text>
+    <text x="35" y="294" class="svg-small">本書では整数の返り値にも使う。</text>
+    <rect x="20" y="330" width="326" height="101" rx="4" fill="#e9eee5"/>
+    <text x="35" y="358" class="svg-text" font-weight="600">RSP ｜ スタックはどこか</text>
+    <text x="35" y="385" class="svg-small">スタックの先頭アドレスを保持する。</text>
+    <text x="35" y="412" class="svg-small">データ自体は、指した先のメモリに。</text>
+    <rect x="491" y="12" width="228" height="441" rx="6" fill="#f8f6f0" stroke="#b7c4b7"/>
+    <text x="510" y="45" class="svg-heading">メモリ</text>
+    <text x="510" y="73" class="svg-small">命令やデータがある場所</text>
+    <rect x="509" y="94" width="191" height="101" rx="4" fill="#fffef9" stroke="#dcded3"/>
+    <text x="525" y="122" class="svg-text" font-weight="600">命令のバイト列</text>
+    <text x="525" y="150" class="svg-mono">48 89 F8 …</text>
+    <text x="525" y="177" class="svg-small">CPUが読んで実行する</text>
+    <rect x="509" y="212" width="191" height="101" rx="4" fill="#fffef9" stroke="#dcded3"/>
+    <text x="525" y="240" class="svg-text" font-weight="600">データ</text>
+    <text x="525" y="267" class="svg-small">必要な値を読み出し、</text>
+    <text x="525" y="294" class="svg-small">処理結果を書き込む</text>
+    <rect x="509" y="330" width="191" height="101" rx="4" fill="#fffef9" stroke="#dcded3"/>
+    <text x="525" y="358" class="svg-text" font-weight="600">スタック</text>
+    <text x="525" y="385" class="svg-small">関数の戻り先などを</text>
+    <text x="525" y="412" class="svg-small">メモリ上に保存する</text>
+    <path d="M 355 145 H 501" stroke="#ac4b30" stroke-width="2" marker-end="url(#arrowhead)"/>
+    <text x="428" y="130" text-anchor="middle" class="svg-small">場所を指す</text>
+    <path d="M 375 263 H 482" stroke="#ac4b30" stroke-width="2" marker-start="url(#arrowhead)" marker-end="url(#arrowhead)"/>
+    <text x="428" y="248" text-anchor="middle" class="svg-small">読み書き</text>
+    <path d="M 355 382 H 501" stroke="#ac4b30" stroke-width="2" marker-end="url(#arrowhead)"/>
+    <text x="428" y="367" text-anchor="middle" class="svg-small">場所を指す</text>
+    <text x="4" y="481" class="svg-small">この図では、RIP・RSPは「場所」、RAXは「値」に注目する。</text>
+    <text x="4" y="505" class="svg-small">※ RAXは汎用レジスタなので、アドレスを入れることもできる。</text>
+   </svg>
+  </figure>
+  <p>レジスタはCPU内部の小さな記憶領域。<strong>RIP</strong>は命令の位置を扱うレジスタで、プログラムカウンタに相当する。通常は次の命令へ進み、分岐では別の場所へ進む。</p>
+  <p class="note">アドレスは「場所」、その場所にあるデータは「中身」。この２つを混ぜないことが、後のポインタやスタックの理解につながる。ここではキャッシュや仮想メモリを省いた概念図として見る。</p>
+  <h3 id="bits-and-bytes">ビット・バイト・命令の関係</h3>
+  <p>メモリの中身を８ビットずつ区切ると、１区切りが１バイトになる。下の２行は<strong>同じデータを、２進数と16進数で表したもの</strong>。16進数なら、１バイトを２桁で書ける。</p>
+  <figure class="diagram">
+   <svg viewBox="0 0 720 340" role="img" aria-labelledby="bytes-title bytes-desc" xmlns="http://www.w3.org/2000/svg">
+    <title id="bytes-title">８ビットが１バイト、この例では３バイトで１命令</title>
+    <desc id="bytes-desc">連続するアドレスA、A+1、A+2に１バイトずつ置かれる。２進数の01001000、10001001、11111000は、16進数では48、89、F8。同じデータの表記を変えただけ。この３バイトをx86-64のCPUは１つの命令mov rax, rdiとして読む。横並びは順序を表し、物理的な配置ではない。</desc>
+    <text x="3" y="35" class="svg-small">アドレス</text>
+    <text x="3" y="90" class="svg-text">２進数</text>
+    <text x="3" y="114" class="svg-small">１マス＝１ビット</text>
+    <text x="3" y="204" class="svg-text">16進数</text>
+
+<text x="228" y="35" text-anchor="middle" class="svg-small">A</text>
+<rect x="140" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="151" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">0</text>
+<rect x="162" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="173" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">1</text>
+<rect x="184" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="195" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">0</text>
+<rect x="206" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="217" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">0</text>
+<rect x="228" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="239" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">1</text>
+<rect x="250" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="261" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">0</text>
+<rect x="272" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="283" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">0</text>
+<rect x="294" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="305" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">0</text>
+<path d="M 140 118 V 128 H 316 V 118" fill="none" stroke="#355d4c"/>
+    <text x="228" y="151" text-anchor="middle" class="svg-small">８ビット＝１バイト</text>
+    <rect x="140" y="176" width="176" height="47" rx="4" fill="#f2e9dc"/>
+    <text x="228" y="207" text-anchor="middle" class="svg-mono" style="fill:#ac4b30;font-size:26px">48</text>
+<text x="422" y="35" text-anchor="middle" class="svg-small">A + 1</text>
+<rect x="334" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="345" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">1</text>
+<rect x="356" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="367" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">0</text>
+<rect x="378" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="389" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">0</text>
+<rect x="400" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="411" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">0</text>
+<rect x="422" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="433" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">1</text>
+<rect x="444" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="455" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">0</text>
+<rect x="466" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="477" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">0</text>
+<rect x="488" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="499" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">1</text>
+<path d="M 334 118 V 128 H 510 V 118" fill="none" stroke="#355d4c"/>
+    <text x="422" y="151" text-anchor="middle" class="svg-small">８ビット＝１バイト</text>
+    <rect x="334" y="176" width="176" height="47" rx="4" fill="#f2e9dc"/>
+    <text x="422" y="207" text-anchor="middle" class="svg-mono" style="fill:#ac4b30;font-size:26px">89</text>
+<text x="616" y="35" text-anchor="middle" class="svg-small">A + 2</text>
+<rect x="528" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="539" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">1</text>
+<rect x="550" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="561" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">1</text>
+<rect x="572" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="583" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">1</text>
+<rect x="594" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="605" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">1</text>
+<rect x="616" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="627" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">1</text>
+<rect x="638" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="649" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">0</text>
+<rect x="660" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="671" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">0</text>
+<rect x="682" y="62" width="22" height="45" fill="#e9eee5" stroke="#b7c4b7"/><text x="693" y="91" text-anchor="middle" class="svg-mono" style="font-size:18px">0</text>
+<path d="M 528 118 V 128 H 704 V 118" fill="none" stroke="#355d4c"/>
+    <text x="616" y="151" text-anchor="middle" class="svg-small">８ビット＝１バイト</text>
+    <rect x="528" y="176" width="176" height="47" rx="4" fill="#f2e9dc"/>
+    <text x="616" y="207" text-anchor="middle" class="svg-mono" style="fill:#ac4b30;font-size:26px">F8</text>
+    <path d="M 140 235 V 248 H 704 V 235 M 422 248 V 266" fill="none" stroke="#ac4b30" stroke-width="2"/>
+    <text x="422" y="292" text-anchor="middle" class="svg-text" font-weight="600">この例では、３バイトをまとめて１つの命令として読む</text>
+    <text x="422" y="323" text-anchor="middle" class="svg-mono">mov rax, rdi</text>
+   </svg>
+   <figcaption class="caption">Aは説明用のアドレス。隣へ進むとアドレスは１増える。「横並び」は順番を表し、物理的な配置を表すものではない。</figcaption>
+  </figure>
+  <p class="note"><strong>１バイト＝１命令ではない。</strong> x86-64の命令は長さが一定ではない。この例の <code>48 89 F8</code> は、３バイト（24ビット）で１命令になる。</p>
+
+
+  <h3 id="instruction-boundaries">CPUはどこで命令を区切る？</h3>
+  <p>CPUは「ここで終わり」という記号を探すのではなく、<strong>命令の形式に必要な情報がそろったか</strong>で判断する。今の例を、先頭から追ってみよう。</p>
+  <figure class="diagram"><svg id="decode-process" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 610" role="img" aria-labelledby="decode-process-title decode-process-desc">
+<title id="decode-process-title">CPUは命令の形式を読んで、命令の終わりを判断する</title>
+<desc id="decode-process-desc">64ビットモードでアドレスAから48、89、F8を読む例。48は64ビット幅の指定で、まだ操作が必要。89はコピー操作で、対象を指定するModR/Mバイトが必要。F8でRDIからRAXへのレジスタ間コピーとわかり、この形式では追加のアドレスや定数が不要なので３バイトで終わる。次の命令はA+3から。F8が常に終端記号なのではない。</desc>
+<defs><marker id="decode-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ac4b30"/></marker></defs>
+<style>#decode-process text{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;fill:#292e2b}#decode-process .small{font-size:14px;fill:#666d66}#decode-process .body{font-size:16px}#decode-process .bold{font-size:17px;font-weight:600}#decode-process .mono{font-family:monospace;font-size:24px;fill:#ac4b30}#decode-process .step{font-family:monospace;font-size:15px;fill:#355d4c}</style>
+<rect width="720" height="610" rx="6" fill="#fffef9"/>
+<text x="20" y="30" class="bold">命令の先頭 A から、形式に沿って読み解く</text>
+<text x="20" y="57" class="small">x86-64の64ビットモード ／ 読み解く順序を示す概念図</text>
+<g text-anchor="middle">
+<text x="98" y="86" class="small">A</text><text x="270" y="86" class="small">A + 1</text><text x="442" y="86" class="small">A + 2</text><text x="614" y="86" class="small">A + 3</text>
+<rect x="20" y="96" width="156" height="47" rx="4" fill="#e9eee5"/><rect x="192" y="96" width="156" height="47" rx="4" fill="#e9eee5"/><rect x="364" y="96" width="156" height="47" rx="4" fill="#e9eee5"/><rect x="536" y="96" width="156" height="47" rx="4" fill="#f2e9dc"/>
+<text x="98" y="127" class="mono">48</text><text x="270" y="127" class="mono">89</text><text x="442" y="127" class="mono">F8</text><text x="614" y="126" class="body">次の命令…</text>
+</g>
+<path d="M20 152V164H520V152" fill="none" stroke="#355d4c"/>
+<text x="270" y="187" text-anchor="middle" class="small">なぜ、この３バイトで区切れる？</text>
+<rect x="20" y="207" width="672" height="91" rx="5" fill="#f8f6f0" stroke="#dcded3"/>
+<text x="38" y="234" class="step">① 48 を読む</text>
+<text x="192" y="237" class="bold">「64ビットの値を扱う」という指定</text>
+<text x="192" y="264" class="body">まだ「何をするか」がわからない。</text>
+<text x="192" y="285" class="small">→ 操作を表すバイトが必要</text>
+<path d="M96 301V321" stroke="#ac4b30" stroke-width="2" marker-end="url(#decode-arrow)"/>
+<rect x="20" y="329" width="672" height="91" rx="5" fill="#f8f6f0" stroke="#dcded3"/>
+<text x="38" y="356" class="step">② 89 を読む</text>
+<text x="192" y="359" class="bold">「コピーする」という操作</text>
+<text x="192" y="386" class="body">まだ「どこから、どこへ」がわからない。</text>
+<text x="192" y="407" class="small">→ この形式では対象を指定する１バイトが必要</text>
+<path d="M96 423V443" stroke="#ac4b30" stroke-width="2" marker-end="url(#decode-arrow)"/>
+<rect x="20" y="451" width="672" height="100" rx="5" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="38" y="478" class="step">③ F8 を読む</text>
+<text x="192" y="481" class="bold">「RDIからRAXへ」と対象が決まる</text>
+<text x="192" y="508" class="body">この形式では追加のアドレスや定数は不要。</text>
+<text x="192" y="535" class="bold" style="fill:#355d4c">必要な情報がそろった → ここで１命令が完了</text>
+<text x="20" y="581" class="small">F8が「終わりの印」なのではなく、命令の形式から長さが決まる。</text>
+<text x="20" y="604" class="small">この命令は３バイトなので、次は A + 3 から読み解く。</text>
+</svg>
+</figure>
+  <p>「幅の指定 → 操作 → 対象」がそろい、この形式に必要な情報を読み終えたので、３バイトで区切れる。別の形式なら、さらにアドレスを計算する情報や定数を読むこともある。</p>
+  <p class="caption">実際のCPUが１バイトずつ時間をかけて読む様子ではなく、デコードの判断を順に示した概念図。参照：<a href="https://intelxed.github.io/ref-manual/#TERMS">Intelの命令形式の解説</a>。</p>
+
+  <h3 id="rip-start-address">補足：RIPが保持するアドレスは１つだけ</h3>
+  <p>この図で命令の位置を示すRIPが保持するのは、<strong>命令の最初のバイトのアドレス <code>A</code> だけ</strong>。３バイトの命令でも、<code>A</code>・<code>A + 1</code>・<code>A + 2</code> の３つをまとめて保持するわけではない。</p>
+  <p>CPU内部の読み出し回路は、先頭の <code>A</code> を基準に続きのバイトを取得する。２番目の場所は <code>A + 1</code>、３番目は <code>A + 2</code> と求められるので、それぞれのアドレスをRIPに保存しておく必要はない。</p>
+  <p class="note">この命令が３バイトだとわかれば、順に進む場合の次の命令の位置は <code>A + 3</code> になる。RIPはアドレスの一覧ではなく、１つの命令位置を示す。</p>
+
+  <h3 id="instruction-size-and-value-width">補足：３バイトの命令で、64ビットの値を扱える？</h3>
+  <p><strong>命令自体の長さ</strong>と、<strong>命令が扱う値の幅</strong>は別のもの。</p>
+  <table>
+   <thead><tr><th>今回の大きさ</th><th>何の大きさ？</th></tr></thead>
+   <tbody>
+    <tr><td>３バイト＝24ビット</td><td><code>48 89 F8</code> という<strong>命令そのもの</strong>を記録する大きさ。</td></tr>
+    <tr><td>64ビット＝８バイト</td><td>その命令がRDIからRAXへ<strong>コピーする値</strong>の幅。</td></tr>
+   </tbody>
+  </table>
+  <p>この <code>48</code> は「コピーする対象を64ビット幅として扱う」という指定。命令自身を64ビットにする指定ではない。</p>
+  <p class="note">命令にはコピーする値そのものを埋め込まず、「RDIからRAXへコピーする」という操作と対象を記録している。値はレジスタにあるので、３バイトの短い命令でも64ビットの値を操作できる。</p>
+
+ </section>
+
+ <section id="translation">
+  <h2><span class="num">02</span>言葉から機械語へ</h2>
+  <p><strong>アセンブリ</strong>は命令を文字で記述する言語、<strong>アセンブラ</strong>はその記述を変換するプログラム。CPUが実行するのは、変換された機械語のバイト列だ。</p>
+  <figure class="diagram">
+   <svg viewBox="0 0 720 280" role="img" aria-labelledby="flow-title flow-desc" xmlns="http://www.w3.org/2000/svg">
+    <title id="flow-title">Cから実行ファイルへの変換</title><desc id="flow-desc">Cのソースをコンパイラがアセンブリに、アセンブラがオブジェクトに、リンカが実行ファイルに変換する。本書のコンパイラの出力はアセンブリ。前処理は省略。</desc>
+    <rect x="1" y="16" width="250" height="90" rx="5" fill="#f8f6f0" stroke="#dcded3"/>
+    <text x="22" y="53" class="svg-heading">Cのソース</text><text x="22" y="80" class="svg-small">処理の意味を書く</text>
+    <path d="M 264 61 H 452" stroke="#ac4b30" stroke-width="2" marker-end="url(#arrowhead)"/><text x="358" y="44" text-anchor="middle" class="svg-small">① コンパイラ</text>
+    <rect x="469" y="16" width="250" height="90" rx="5" fill="#e9eee5" stroke="#355d4c"/>
+    <text x="490" y="53" class="svg-heading">アセンブリ</text><text x="490" y="80" class="svg-small">本書のコンパイラの出力</text>
+    <path d="M 594 117 V 165" stroke="#ac4b30" stroke-width="2" marker-end="url(#arrowhead)"/><text x="579" y="146" text-anchor="end" class="svg-small">② アセンブラ</text>
+    <rect x="469" y="178" width="250" height="90" rx="5" fill="#f8f6f0" stroke="#dcded3"/>
+    <text x="490" y="215" class="svg-heading">オブジェクト</text><text x="490" y="242" class="svg-small">機械語などを含む</text>
+    <path d="M 452 223 H 264" stroke="#ac4b30" stroke-width="2" marker-end="url(#arrowhead)"/><text x="358" y="206" text-anchor="middle" class="svg-small">③ リンカ</text>
+    <rect x="1" y="178" width="250" height="90" rx="5" fill="#f8f6f0" stroke="#dcded3"/>
+    <text x="22" y="215" class="svg-heading">実行ファイル</text><text x="22" y="242" class="svg-small">必要な部品を結合</text>
+   </svg>
+  </figure>
+  <p>アセンブルしただけでは、別のファイルにある関数の位置が未確定なことがある。リンカは部品を結びつけ、参照先などを解決する。図では前処理を省略している。<a href="https://gcc.gnu.org/onlinedocs/gcc/Overall-Options.html">GCCの処理段階 ↗</a></p>
+  <p class="note">機械語の読み方は命令セット（ISA）が定める。ここで扱うx86-64のバイト列を、別のISAのCPUがそのまま同じ命令として実行できるわけではない。</p>
+  <h3 id="object-vs-executable">オブジェクトと実行ファイルの中身</h3>
+  <p>オブジェクトファイルは、ソースファイル１つ分の<strong>部品</strong>。機械語は入っているが、別の部品にある関数の住所がまだ決まっていないことがある。実行ファイルは、リンカが部品を結合して、参照先や起動地点を整えた<strong>実行用のまとまり</strong>だ。</p>
+  <figure class="diagram">
+   <svg viewBox="0 0 900 590" role="img" aria-labelledby="object-title object-desc" xmlns="http://www.w3.org/2000/svg">
+    <title id="object-title">オブジェクトファイルがリンカで実行ファイルになる</title>
+    <desc id="object-desc">main.cから作ったmain.oとmath.cから作ったmath.oは、それぞれ機械語、シンボル、未解決の参照と再配置情報を含む。リンカが二つを結合し、addの参照先を確定し、実行ファイルを作る。実行ファイルにはコード、データ、解決済みの参照、起動地点が含まれ、OSが読み込んで実行できる。</desc>
+    <defs><marker id="link-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ac4b30"/></marker></defs>
+    <style>
+      #object-title,#object-desc{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif}
+      #object-vs-executable text{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;fill:#292e2b}
+      #object-vs-executable .svg-title{font-size:21px;font-weight:600;fill:#355d4c}
+      #object-vs-executable .svg-head{font-size:17px;font-weight:600}
+      #object-vs-executable .svg-small{font-size:14px;fill:#666d66}
+      #object-vs-executable .svg-mono{font-family:monospace;font-size:16px;fill:#ac4b30}
+    </style>
+    <g id="object-vs-executable">
+     <rect x="1" y="1" width="898" height="588" rx="6" fill="#fffef9"/>
+     <text x="24" y="35" class="svg-head">ファイルごとにできる部品を、リンカが１つにまとめる</text>
+     <text x="24" y="61" class="svg-small">同じ「機械語を含むファイル」でも、まだ住所が未確定か、実行の準備ができているかが違う。</text>
+
+     <rect x="24" y="88" width="254" height="228" rx="5" fill="#f8f6f0" stroke="#dcded3"/>
+     <text x="44" y="120" class="svg-title">main.o</text><text x="44" y="145" class="svg-small">main.cから作った部品</text>
+     <rect x="44" y="164" width="214" height="43" rx="3" fill="#fffef9" stroke="#dcded3"/><text x="58" y="191" class="svg-mono">call add</text>
+     <text x="44" y="231" class="svg-small">機械語の本体</text><text x="44" y="255" class="svg-small">「addはどこ？」という参照</text><text x="44" y="279" class="svg-small">シンボル・再配置情報</text>
+
+     <rect x="622" y="88" width="254" height="228" rx="5" fill="#f8f6f0" stroke="#dcded3"/>
+     <text x="642" y="120" class="svg-title">math.o</text><text x="642" y="145" class="svg-small">math.cから作った部品</text>
+     <rect x="642" y="164" width="214" height="43" rx="3" fill="#fffef9" stroke="#dcded3"/><text x="656" y="191" class="svg-mono">add:</text>
+     <text x="642" y="231" class="svg-small">addの機械語</text><text x="642" y="255" class="svg-small">addというシンボルの定義</text><text x="642" y="279" class="svg-small">外から呼べる名前</text>
+
+     <rect x="342" y="110" width="216" height="185" rx="5" fill="#e9eee5" stroke="#355d4c"/>
+     <text x="362" y="145" class="svg-title">リンカ</text><text x="362" y="171" class="svg-small">部品の住所を解決</text>
+     <text x="362" y="210" class="svg-head">① 結合</text><text x="362" y="236" class="svg-head">② addを発見</text><text x="362" y="262" class="svg-head">③ 参照先を更新</text>
+     <path d="M278 185H332" stroke="#ac4b30" stroke-width="2" marker-end="url(#link-arrow)"/><path d="M622 185H568" stroke="#ac4b30" stroke-width="2" marker-end="url(#link-arrow)"/>
+
+     <path d="M450 305V355" stroke="#ac4b30" stroke-width="2" marker-end="url(#link-arrow)"/><text x="468" y="335" class="svg-small">リンク後</text>
+     <rect x="146" y="371" width="608" height="164" rx="5" fill="#f2e9dc" stroke="#ac4b30"/>
+     <text x="170" y="407" class="svg-title">実行ファイル</text><text x="170" y="433" class="svg-small">OSが読み込んで、実行を開始できるまとまり</text>
+     <rect x="170" y="455" width="126" height="52" rx="3" fill="#fffef9"/><text x="233" y="478" text-anchor="middle" class="svg-small">コード</text><text x="233" y="498" text-anchor="middle" class="svg-small">結合済み</text>
+     <rect x="312" y="455" width="126" height="52" rx="3" fill="#fffef9"/><text x="375" y="478" text-anchor="middle" class="svg-small">データ</text><text x="375" y="498" text-anchor="middle" class="svg-small">必要な領域</text>
+     <rect x="454" y="455" width="126" height="52" rx="3" fill="#fffef9"/><text x="517" y="478" text-anchor="middle" class="svg-small">参照先</text><text x="517" y="498" text-anchor="middle" class="svg-small">解決済み</text>
+     <rect x="596" y="455" width="126" height="52" rx="3" fill="#fffef9"/><text x="659" y="478" text-anchor="middle" class="svg-small">入口</text><text x="659" y="498" text-anchor="middle" class="svg-small">mainから開始</text>
+     <text x="24" y="568" class="svg-small">オブジェクト＝部品。実行ファイル＝住所と入口が整った、実行可能な全体。</text>
+    </g>
+   </svg>
+  </figure>
+  <p class="note"><code>main.o</code>だけでは、<code>add</code>の実体が別ファイルにあるため実行ファイルにできない。リンカはシンボルと再配置情報を使って参照先を埋める。動的リンクを使う場合は、実行時に共有ライブラリを組み合わせる部分も残る。</p>
+ </section>
+
+ <section id="reading">
+  <h2><span class="num">03</span>アセンブリを読む</h2>
+  <p>まずは、値を返す処理を２つに分ける。<strong>返り値を置く</strong>処理と、<strong>呼び出し元に戻る</strong>処理だ。</p>
+  <div class="columns">
+   <div class="codebox"><div class="codehead">C：13を返す関数</div><pre><code>int value(void) {
+    return 13;
+}</code></pre></div>
+   <div class="codebox"><div class="codehead">対応する命令の一例</div><pre><code>value:
+    <span class="op">mov</span> eax, 13
+    <span class="op">ret</span></code></pre></div>
+  </div>
+  <p class="caption">手書きの命令部分です。コンパイラの実際の出力は最適化などで変わります。EAXはRAXの下位32ビットを指し、この環境のCの <code>int</code> の返り値に使います。EAXへの書き込みでRAXの上位32ビットはゼロになります。</p>
+  <table><thead><tr><th>読むポイント</th><th>意味</th></tr></thead><tbody>
+   <tr><td><code>mov eax, 13</code></td><td>13をEAXに入れる。Intel記法の <code>mov</code> は左が書き込み先。</td></tr>
+   <tr><td><code>ret</code></td><td>保存されている戻り先へ移る。返り値を計算する命令ではない。</td></tr>
+   <tr><td><code>value:</code></td><td>位置につけた名前（ラベル）。CPUの実行命令ではない。</td></tr>
+   <tr><td><code>.intel_syntax noprefix</code></td><td>Intel記法を指定するアセンブラへの指示。これもCPUの命令ではない。</td></tr>
+  </tbody></table>
+  <p class="caption">記法の確認：<a href="https://sourceware.org/binutils/docs/as/i386_002dVariations.html">GNUアセンブラの仕様 ↗</a></p>
+  <h3>逆アセンブルの表示は、３つに分けて読む</h3>
+  <figure class="diagram">
+   <svg viewBox="0 0 720 105" role="img" aria-labelledby="decode-title" xmlns="http://www.w3.org/2000/svg">
+    <title id="decode-title">逆アセンブル表示の３要素：命令の位置、機械語のバイト列、人間が読む命令表記</title>
+    <path d="M 180 5 V 100 M 405 5 V 100" stroke="#dcded3"/>
+    <g class="svg-mono" fill="#ac4b30"><text x="10" y="36">0000:</text><text x="200" y="36">48 89 f8</text><text x="425" y="36">mov rax, rdi</text></g>
+    <g class="svg-small"><text x="10" y="77">命令の位置</text><text x="200" y="77">機械語のバイト列</text><text x="425" y="77">人間が読む命令表記</text></g>
+   </svg>
+  </figure>
+  <p class="caption">表示の読み方を示すための例。位置は仮の値で、実行時の絶対アドレスとは限りません。逆アセンブルは機械語を命令表記に戻す操作で、元のCの変数名や構造を完全に復元するものではありません。</p>
+ </section>
+
+ <section id="call">
+  <h2><span class="num">04</span>呼び出して、戻る</h2>
+  <div class="columns">
+   <div class="codebox"><div class="codehead">呼び出す側：戻ってから１を足す</div><pre><code>    <span class="op">call</span> value    # ① valueへ移る
+after_call:
+    <span class="op">add</span> eax, 1    # ④ ここから再開。13 → 14
+    # 呼び出し元の処理が続く</code></pre></div>
+   <div class="codebox"><div class="codehead">呼び出される側：13を返す</div><pre><code>value:
+    <span class="op">mov</span> eax, 13   # ② 返り値を用意する
+    <span class="op">ret</span>           # ③ after_callへ戻る</code></pre></div>
+  </div>
+  <p class="caption">別々の場所にある命令の抜粋（Intel記法）。呼び出し前後のスタック調整などは省略しています。<code>after_call:</code> は、<code>call</code> の直後にある <code>add</code> 命令の位置につけた名前です。</p>
+  <p><code>call value</code> が保存するのは、<strong><code>after_call</code> のアドレス</strong>。<code>ret</code> はそのアドレスをスタックから取り出すので、<code>call</code> を繰り返さず、次の <code>add</code> から再開できる。返り値の13はEAX、戻り先のアドレスはスタックにあり、役割が違う。</p>
+  <p class="note"><code>ret</code> に戻り先のアドレスが書かれているわけではない。概念的には <code>RIP = メモリ[RSP]</code>、その後に <code>RSP</code> を８増やす命令。関数がローカル変数などでスタックを使った場合は、<code>ret</code> の前にRSPを戻り先アドレスの位置へ戻しておく。</p>
+  <p>関数呼び出しでは、値の受け渡しに加えて、<strong>処理の続きをどこから再開するか</strong>を覚える必要がある。x86-64の <code>call</code> は次の命令のアドレスをスタックに積み、呼び出し先へ移る。<code>ret</code> はそれを取り出して戻る。</p>
+  <p>スタックはメモリ上の領域で、最後に積んだものから取り出す。<strong>RSP</strong>はその先頭を指すレジスタだ。戻り先を積んでおけば、呼び出しが入れ子になっても、内側の関数から順に戻れる。</p>
+
+  <h3 id="memory-overview">メモリ全体では、どこに何がある？</h3>
+  <p>１つの実行中のプログラム（プロセス）から見える<strong>仮想アドレス空間</strong>には、命令を置く場所、長く残すデータ、実行中に確保するデータなどがある。スタックはその一部。この図も、これまでのスタック図と同じく<strong>上が低いアドレス、下が高いアドレス</strong>だ。</p>
+  <figure class="diagram"><svg id="process-memory-map" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 1035" role="img" aria-labelledby="process-memory-title process-memory-desc">
+<title id="process-memory-title">１つのプロセスから見える仮想メモリの全体像</title>
+<desc id="process-memory-desc">低いアドレスから高いアドレスへ、コード、読み取り専用データ、データ、BSS、ヒープ、未割り当てのすき間、共有ライブラリやファイルのマッピング、メインスレッドのスタックを並べた概念図。実際の配置や大きさは環境で異なる。スタックは低いアドレス側へ伸び、RSPは使用中の先頭を指す。レジスタはこのメモリの地図の外にあるCPU内部の記憶領域。</desc>
+<style>#process-memory-map text{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;fill:#292e2b}#process-memory-map .title{font-size:24px;font-weight:600}#process-memory-map .head{font-size:21px;font-weight:600;fill:#355d4c}#process-memory-map .body{font-size:18px}#process-memory-map .small{font-size:16px;fill:#666d66}</style>
+<defs><marker id="memory-map-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ac4b30"/></marker></defs>
+<rect width="960" height="1035" rx="6" fill="#fffef9"/>
+<text x="24" y="36" class="title">１つのプログラムから見える、メモリの地図</text>
+<text x="24" y="65" class="small">Linux・x86-64のユーザー空間を簡略化した一例。位置・順序・面積は固定ではない。</text>
+<text x="24" y="95" class="small">低いアドレス</text>
+<path d="M58 117V909" fill="none" stroke="#ac4b30" stroke-width="2" marker-end="url(#memory-map-arrow)"/>
+<text x="24" y="939" class="small">高いアドレス</text>
+<rect x="130" y="110" width="380" height="76" rx="4" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="150" y="141" class="head">コード領域</text><text x="150" y="170" class="body">call・mov・ret などの機械語</text>
+<text x="548" y="140" class="body">CPUが実行する命令がある。</text><text x="548" y="169" class="small">RIPが、この中の命令位置を指す。</text>
+<rect x="130" y="196" width="380" height="64" rx="4" fill="#eef1e8" stroke="#b7c4b7"/>
+<text x="150" y="234" class="head">読み取り専用データ領域</text>
+<text x="548" y="224" class="body">文字列リテラルなど。</text><text x="548" y="249" class="small">通常、プログラムからは書き換えない。</text>
+<rect x="130" y="270" width="380" height="64" rx="4" fill="#f2e9dc" stroke="#d9bd9f"/>
+<text x="150" y="309" class="head">データ領域</text>
+<text x="548" y="296" class="body">初期値を持つグローバル変数など。</text><text x="548" y="323" class="small">書き換えながら、長く保持する値。</text>
+<rect x="130" y="344" width="380" height="64" rx="4" fill="#f2e9dc" stroke="#d9bd9f"/>
+<text x="150" y="383" class="head">BSS（ゼロ初期化データ）</text>
+<text x="548" y="370" class="body">ゼロで始まるグローバル変数など。</text><text x="548" y="397" class="small">データ領域・BSSにはstatic変数も入る。</text>
+<rect x="130" y="418" width="380" height="76" rx="4" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="150" y="449" class="head">ヒープ領域</text><text x="150" y="478" class="body">実行中に確保するデータ</text>
+<text x="548" y="447" class="body">mallocなどで必要な容量を確保。</text><text x="548" y="476" class="small">動的確保には、別の領域を使う場合もある。</text>
+<rect x="130" y="504" width="380" height="74" rx="4" fill="#fffef9" stroke="#b7c4b7" stroke-dasharray="6 5"/>
+<text x="150" y="547" class="head">未割り当てのすき間</text>
+<text x="548" y="536" class="body">アドレスはあっても、使えるとは限らない。</text><text x="548" y="563" class="small">物理メモリの「空き容量」とも別の話。</text>
+<rect x="130" y="588" width="380" height="90" rx="4" fill="#e8edf0" stroke="#b9c7cf"/>
+<text x="150" y="623" class="head">共有ライブラリ・ファイルなど</text><text x="150" y="653" class="body">メモリに対応付けた領域</text>
+<text x="548" y="615" class="body">ライブラリの命令やデータ、</text><text x="548" y="643" class="body">mmapで対応付けたファイルなど。</text><text x="548" y="670" class="small">複数の領域に分かれて配置される。</text>
+<text x="305" y="709" text-anchor="middle" class="small">⋮　すき間などを省略　⋮</text>
+<rect x="130" y="728" width="380" height="178" rx="4" fill="#fffef9" stroke="#ac4b30"/>
+<rect x="131" y="729" width="378" height="77" fill="#faf3e8"/>
+<text x="150" y="759" class="body">スタックが伸びるための余地</text><text x="150" y="788" class="small">使用範囲は低いアドレス側へ広がる ↑</text>
+<rect x="131" y="806" width="378" height="99" fill="#e9eee5"/>
+<text x="150" y="839" class="head">スタック：使用中の部分</text><text x="150" y="872" class="body">戻り先・一部のローカル変数など</text>
+<path d="M631 806H516" stroke="#ac4b30" stroke-width="2" marker-end="url(#memory-map-arrow)"/>
+<text x="649" y="813" class="head">← RSPが指す先頭</text>
+<path d="M572 786V737" stroke="#ac4b30" stroke-width="2" marker-end="url(#memory-map-arrow)"/>
+<text x="592" y="751" class="body">積むとRSPが減る</text><text x="592" y="778" class="small">使える範囲には上限がある。</text>
+<text x="548" y="849" class="small">ここはメインスレッドのスタック。</text><text x="548" y="876" class="small">ほかのスレッドには別のスタックがある。</text>
+<rect x="130" y="947" width="806" height="63" rx="4" fill="#f8f6f0" stroke="#dcded3"/>
+<text x="150" y="974" class="body">RIP・RSP・EAXなどのレジスタは、この地図の外の「CPU内部」にある。</text>
+<text x="150" y="998" class="small">これは仮想アドレスの地図。RAMが物理的にこの順序で並んでいる図ではない。</text>
+</svg><figcaption class="caption">領域の役割を見渡すための概念図。アドレスの配置や大きさは、OS・実行ファイル・実行時の配置のランダム化などで変わる。細かな領域やカーネル側の空間は省略している。</figcaption></figure>
+  <p class="note">スタックの「余地」は、確保済み、またはOSなどの管理のもとで拡張できる範囲をまとめて描いている。低い側の空間を無制限に使えるわけではなく、範囲外へのアクセスを検出するための保護領域が設けられることもある。また、ローカル変数がすべてスタックに置かれるわけではなく、レジスタに置かれたり、最適化で消えたりする。</p>
+  <p class="caption">Linuxでは <code>/proc/&lt;PID&gt;/maps</code> で、実際に対応付けられた領域とアクセス権を確認できる。参照：<a href="https://man7.org/linux/man-pages/man5/proc_pid_maps.5.html">Linuxのメモリ配置の資料</a>。<code>malloc</code> による確保は、連続したヒープのほか、別のマッピングを使うこともある：<a href="https://man7.org/linux/man-pages/man3/malloc.3.html">動的メモリ確保の資料</a>。</p>
+  <h3 id="call-code-and-value">命令・返り値・戻り先は、それぞれどこにある？</h3>
+  <p><code>value:</code> の下の命令は、メモリのコード領域に置かれる。<code>mov eax, 13</code> はCPU内のEAXに13を書き込む命令。この例でスタックに積むのは、<code>call</code> が保存する<strong>戻り先のアドレス</strong>だ。</p>
+  <figure class="diagram"><svg id="call-storage" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 435" role="img" aria-labelledby="call-storage-title call-storage-desc">
+<title id="call-storage-title">命令はコード領域、返り値13はEAX、戻り先アドレスはスタック</title>
+<desc id="call-storage-desc">call value、add eax,1、mov eax,13、retの機械語はメモリのコード領域にある。callがスタックに積むのはafter_callのアドレス0x401005。mov eax,13はCPU内のEAXに13を書き、スタックは変更しない。retはスタックから戻り先を読み出す。</desc>
+<style>#call-storage text{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;fill:#292e2b}#call-storage .title{font-size:23px;font-weight:600}#call-storage .head{font-size:19px;font-weight:600;fill:#355d4c}#call-storage .small{font-size:15px;fill:#666d66}#call-storage .code{font-family:monospace;font-size:20px}</style>
+<defs><marker id="call-storage-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ac4b30"/></marker></defs>
+<rect width="960" height="435" rx="6" fill="#fffef9"/>
+<text x="24" y="35" class="title">このコードと13は、どこにある？</text>
+<text x="24" y="64" class="small">② mov eax, 13 を実行し終えた場面。命令・値・戻り先を分けて見る。</text>
+<rect x="24" y="88" width="370" height="287" rx="5" fill="#f8f6f0" stroke="#b7c4b7"/>
+<text x="42" y="120" class="head">メモリ：コード領域</text>
+<text x="42" y="152" class="code">call value</text>
+<text x="42" y="181" class="small">after_call:（仮の住所 0x401005）</text>
+<text x="42" y="210" class="code">add eax, 1</text>
+<path d="M42 226H376" stroke="#dcded3"/>
+<text x="42" y="255" class="code">value:</text>
+<rect x="38" y="264" width="338" height="34" rx="3" fill="#e9eee5"/>
+<text x="58" y="288" class="code">mov eax, 13</text>
+<text x="58" y="320" class="code">ret</text>
+<text x="42" y="354" class="small">実際は機械語。ここでは命令表記で表示。</text>
+<rect x="642" y="88" width="294" height="126" rx="5" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="660" y="120" class="head">CPU内部：レジスタ</text>
+<text x="660" y="154" class="code">EAX = 13</text>
+<text x="660" y="190" class="small">mov が13を書き込む場所。</text>
+<rect x="642" y="253" width="294" height="122" rx="5" fill="#f2e9dc" stroke="#d9bd9f"/>
+<text x="660" y="284" class="head">メモリ：スタック</text>
+<text x="660" y="316" class="code">0x0FF8 → 0x401005</text>
+<text x="660" y="348" class="small">保存場所 → after_callのアドレス</text>
+<path d="M394 282H454V151H632" fill="none" stroke="#ac4b30" stroke-width="2" marker-end="url(#call-storage-arrow)"/>
+<text x="474" y="140" class="small">② mov を実行</text>
+<path d="M474 316H632" fill="none" stroke="#ac4b30" stroke-width="2" marker-end="url(#call-storage-arrow)"/>
+<text x="447" y="342" class="small">① call が住所を保存</text>
+<text x="24" y="406" class="small">③ ret はスタックの住所を読み、after_callへ戻る。④ add はEAXを13から14にする。</text>
+<text x="24" y="429" class="small">この例では、関数の命令本体や返り値13をスタックにコピーする命令はない。</text>
+</svg></figure>
+  <h3 id="stack-in-memory">メモリ上では、スタックはどう並ぶ？</h3>
+  <p>スタックも、アドレスの付いたメモリの一部。使う範囲を広げるときは、x86-64では<strong>低いアドレス側へ</strong>先頭を動かす。下の図は、戻り先を１つ積み、取り出すまでの変化だ。</p>
+  <figure class="diagram"><svg id="stack-layout" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 790" role="img" aria-labelledby="stack-layout-title stack-layout-desc">
+<title id="stack-layout-title">call valueで戻り先を保存し、retでafter_callへ戻る</title>
+<desc id="stack-layout-desc">戻り先after_callのアドレスを仮に0x401005とする。call valueはRSPを0x1000から0x0FF8に減らし、その場所に0x401005を保存する。mov eax,13はEAXだけを変え、スタックは変えない。retは保存したアドレスを読み、RSPを0x1000に戻す。after_callのadd eax,1で13が14になる。</desc>
+<style>#stack-layout text{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;fill:#292e2b}#stack-layout .title{font-size:23px;font-weight:600}#stack-layout .head{font-size:18px;font-weight:600;fill:#355d4c}#stack-layout .body{font-size:16px}#stack-layout .small{font-size:14px;fill:#666d66}#stack-layout .addr{font-family:monospace;font-size:15px}#stack-layout .rsp{font-family:monospace;font-size:17px;fill:#ac4b30;font-weight:600}</style>
+<defs><marker id="stack-pointer-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ac4b30"/></marker></defs>
+<rect width="960" height="790" rx="6" fill="#fffef9"/>
+<text x="24" y="36" class="title">保存するのは、after_call のアドレス</text>
+<text x="24" y="65" class="body">after_call: の次の add eax, 1 に戻る。その命令のアドレスを仮に 0x401005 とする。</text>
+<text x="24" y="91" class="small">下は同じスタック領域の変化。１マス＝８バイト。アドレスはすべて説明用の仮の値。</text>
+<rect x="24" y="112" width="288" height="430" rx="5" fill="#f8f6f0" stroke="#dcded3"/>
+<text x="36" y="142" class="head">call value の直前</text>
+<text x="36" y="172" class="rsp">RSP = 0x1000</text>
+<text x="36" y="201" class="small">EAX：値はまだ指定していない</text>
+<text x="109" y="235" class="small">低いアドレス ↑</text>
+<text x="34" y="279" class="addr">0x0FE8</text><rect x="110" y="249" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="199" y="280" text-anchor="middle" class="small">使用範囲の外</text>
+<text x="34" y="329" class="addr">0x0FF0</text><rect x="110" y="299" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="199" y="330" text-anchor="middle" class="small">使用範囲の外</text>
+<text x="34" y="379" class="addr">0x0FF8</text><rect x="110" y="349" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="199" y="380" text-anchor="middle" class="small">使用範囲の外</text>
+<text x="34" y="429" class="addr">0x1000</text><rect x="110" y="399" width="178" height="50" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="199" y="430" text-anchor="middle" class="small">以前からのデータ</text>
+<rect x="110" y="399" width="178" height="50" fill="none" stroke="#ac4b30" stroke-width="2"/><path d="M308 424H293" stroke="#ac4b30" stroke-width="2" marker-end="url(#stack-pointer-arrow)"/>
+<text x="34" y="479" class="addr">0x1008</text><rect x="110" y="449" width="178" height="50" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="199" y="480" text-anchor="middle" class="small">以前からのデータ</text>
+<text x="110" y="524" class="small">高いアドレス ↓</text>
+<text x="24" y="568" class="small">次に実行：call value</text>
+<text x="24" y="592" class="small">戻り先は、直後の add の位置。</text>
+<rect x="336" y="112" width="288" height="430" rx="5" fill="#f8f6f0" stroke="#dcded3"/>
+<text x="348" y="142" class="head">① call → ② mov の実行後</text>
+<text x="348" y="172" class="rsp">RSP = 0x0FF8</text>
+<text x="348" y="201" class="small">EAX = 13（mov eax, 13）</text>
+<text x="421" y="235" class="small">低いアドレス ↑</text>
+<text x="346" y="279" class="addr">0x0FE8</text><rect x="422" y="249" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="511" y="280" text-anchor="middle" class="small">使用範囲の外</text>
+<text x="346" y="329" class="addr">0x0FF0</text><rect x="422" y="299" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="511" y="330" text-anchor="middle" class="small">使用範囲の外</text>
+<text x="346" y="379" class="addr">0x0FF8</text><rect x="422" y="349" width="178" height="50" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="511" y="370" text-anchor="middle" class="addr">0x401005</text><text x="511" y="390" text-anchor="middle" class="small">after_call のアドレス</text>
+<rect x="422" y="349" width="178" height="50" fill="none" stroke="#ac4b30" stroke-width="2"/><path d="M620 374H605" stroke="#ac4b30" stroke-width="2" marker-end="url(#stack-pointer-arrow)"/>
+<text x="346" y="429" class="addr">0x1000</text><rect x="422" y="399" width="178" height="50" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="511" y="430" text-anchor="middle" class="small">以前からのデータ</text>
+<text x="346" y="479" class="addr">0x1008</text><rect x="422" y="449" width="178" height="50" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="511" y="480" text-anchor="middle" class="small">以前からのデータ</text>
+<text x="422" y="524" class="small">高いアドレス ↓</text>
+<text x="336" y="568" class="small">call が８バイト確保し、住所を保存。</text>
+<text x="336" y="592" class="small">mov はEAXに13を入れる。</text>
+<text x="336" y="616" class="small">13をスタックに積むわけではない。</text>
+<rect x="648" y="112" width="288" height="430" rx="5" fill="#f8f6f0" stroke="#dcded3"/>
+<text x="660" y="142" class="head">③ ret の直後</text>
+<text x="660" y="172" class="rsp">RSP = 0x1000</text>
+<text x="660" y="201" class="small">EAX = 13（そのまま）</text>
+<text x="733" y="235" class="small">低いアドレス ↑</text>
+<text x="658" y="279" class="addr">0x0FE8</text><rect x="734" y="249" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="823" y="280" text-anchor="middle" class="small">使用範囲の外</text>
+<text x="658" y="329" class="addr">0x0FF0</text><rect x="734" y="299" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="823" y="330" text-anchor="middle" class="small">使用範囲の外</text>
+<text x="658" y="379" class="addr">0x0FF8</text><rect x="734" y="349" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="823" y="370" text-anchor="middle" class="addr">0x401005</text><text x="823" y="390" text-anchor="middle" class="small">値は残るが使用範囲外</text>
+<text x="658" y="429" class="addr">0x1000</text><rect x="734" y="399" width="178" height="50" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="823" y="430" text-anchor="middle" class="small">以前からのデータ</text>
+<rect x="734" y="399" width="178" height="50" fill="none" stroke="#ac4b30" stroke-width="2"/><path d="M932 424H917" stroke="#ac4b30" stroke-width="2" marker-end="url(#stack-pointer-arrow)"/>
+<text x="658" y="479" class="addr">0x1008</text><rect x="734" y="449" width="178" height="50" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="823" y="480" text-anchor="middle" class="small">以前からのデータ</text>
+<text x="734" y="524" class="small">高いアドレス ↓</text>
+<text x="648" y="568" class="small">ret が 0x401005 を読み出す。</text>
+<text x="648" y="592" class="small">RIPに戻り先を設定し、RSPを８増加。</text>
+<text x="648" y="616" class="small">次に実行：after_call の add。</text>
+<rect x="24" y="646" width="912" height="78" rx="5" fill="#f2e9dc" stroke="#d9bd9f"/>
+<text x="43" y="675" class="head">④ after_call: の add eax, 1 を実行 → EAX は13から14へ</text>
+<text x="43" y="704" class="body">この add はスタックを変えない。RSPは0x1000のまま、呼び出し元の処理が続く。</text>
+<text x="24" y="756" class="small">RSPは「保存場所（0x0FF8など）」を指す。そこに入る「戻り先（0x401005）」とは別のアドレス。</text>
+<text x="24" y="780" class="small">retはメモリを消去しない。RSPが戻ると、取り出した枠は使用中の範囲から外れる。</text>
+</svg></figure>
+  <p class="caption">スタック全体のうち５マスだけを抜き出した概念図。最初から５マスだけ確保されているという意味ではない。通常、OSなどが用意したスタック領域の中でRSPを動かして使う。図のアドレスはプログラムから見えるもので、物理メモリの配置を示すものではない。</p>
+  <h3>命令を１つずつ進めてみる</h3>
+  <p class="caption">独自の観察用モデル：<code>long</code> の２つの値、5と8を足して返す場面。命令の前に引数を用意し、最後は呼び出し元の「続き」で止まります。</p>
+  <div class="lab">
+   <div class="lab-title"><b>関数呼び出しの観察</b><span>緑の行＝次に実行する命令</span></div>
+   <div class="lab-body">
+    <div class="program" aria-label="実行するアセンブリ">
+     <div class="label">呼び出し元</div>
+     <div class="instruction" data-step="0"><span>01</span>mov rdi, 5</div>
+     <div class="instruction" data-step="1"><span>02</span>mov rsi, 8</div>
+     <div class="instruction" data-step="2"><span>03</span>call sum</div>
+     <div class="instruction" data-step="6"><span>04</span>… 続き</div>
+     <div class="label" style="margin-top:16px">sum:</div>
+     <div class="instruction" data-step="3"><span>05</span>mov rax, rdi</div>
+     <div class="instruction" data-step="4"><span>06</span>add rax, rsi</div>
+     <div class="instruction" data-step="5"><span>07</span>ret</div>
+    </div>
+    <div class="state">
+     <div class="state-title">レジスタの値 / — はまだ未設定</div>
+     <div class="regs"><div class="reg"><small>RDI / 第１引数</small><output id="rdi">—</output></div><div class="reg"><small>RSI / 第２引数</small><output id="rsi">—</output></div><div class="reg"><small>RAX / 返り値</small><output id="rax">—</output></div></div>
+     <div class="stack"><span>RSP：<output id="rsp">0x1000</output></span><b id="stack-content">戻り先はまだ積んでいない</b></div>
+     <p class="caption">ここでのスタック表示は、この呼び出しが使う部分のみ。アドレスは説明用の仮の値です。</p>
+    </div>
+   </div>
+   <div class="controls"><button class="button" id="next" type="button">１命令進める →</button><button class="button secondary" id="reset" type="button">最初から</button><span id="step-counter">0 / 6</span></div>
+   <p id="explanation" role="status" aria-live="polite"></p>
+  </div>
+  <noscript><p>この観察にはJavaScriptが必要です。流れ：引数を用意 → 戻り先を積んで呼び出す → 13をRAXに入れる → 戻り先を取り出して再開。</p></noscript>
+  <p class="note"><strong>値を渡す約束と、CPUの命令を分ける。</strong> RDI・RSIで整数引数を渡し、RAXでこの整数結果を返すのは、本書の環境の呼び出し規約。<code>call</code> 自体が引数を選んで渡すわけではない。実装時にはスタックの整列などの約束も守る。この図は整列済みの呼び出し直前から始めている。</p>
+  <h3>振り返り：コード領域とスタック領域をつなぐ</h3>
+  <figure class="diagram" id="call-return-map"><svg id="call-return-svg" viewBox="0 0 900 1120" role="img" aria-labelledby="call-ret-flow-title call-ret-flow-desc" xmlns="http://www.w3.org/2000/svg">
+<title id="call-ret-flow-title">callで戻り先を保存して移り、retで読み出して戻る</title>
+<desc id="call-ret-flow-desc">上下に同じコード領域とスタック領域を描く。上段ではcallが次のaddのアドレス0x401005を、RSPを８減らしたスタックの0x0FF8に保存し、RIPをvalueの0x401100へ変える。下段ではretがRSPの指す0x0FF8から値0x401005を読み、CPUのRIPに入れる。RIPがコード領域のaddを指すので、そこから再開できる。RSPは８増えて0x1000に戻る。</desc>
+<style>
+#call-return-svg text{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;fill:#292e2b}
+#call-return-svg .head{font-size:22px;font-weight:600;fill:#355d4c}
+#call-return-svg .body{font-size:17px}
+#call-return-svg .small{font-size:14px;fill:#666d66}
+#call-return-svg .mono{font-family:monospace;font-size:20px}
+#call-return-svg .address{font-family:monospace;font-size:14px;fill:#666d66}
+#call-return-svg .save{fill:#355d4c;font-weight:600}
+#call-return-svg .jump{fill:#ac4b30;font-weight:600}
+</style>
+<defs>
+ <marker id="call-map-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#355d4c"/></marker>
+ <marker id="call-map-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ac4b30"/></marker>
+</defs>
+<text x="20" y="30" class="head">命令の場所を変える。そのために、戻り先を覚えておく。</text>
+<text x="20" y="58" class="body">左は命令、右は保存した住所。上下の図で、同じメモリを追う。</text>
+<g transform="translate(0 80)">
+<rect x="1" y="1" width="898" height="485" rx="8" fill="#f8f6f0" stroke="#dcded3"/>
+<text x="20" y="33" class="head">Ａ　call：次の命令の住所を保存し、呼び出し先へ移る</text>
+<text x="70" y="71" class="body" font-weight="600">メモリ：コード領域</text>
+<rect x="60" y="85" width="355" height="259" rx="5" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="78" y="110" class="address">0x401000</text><text x="78" y="136" class="mono">call value</text>
+<text x="78" y="170" class="address">0x401005  after_call:</text><text x="78" y="196" class="mono">add eax, 1</text>
+<rect x="61" y="224" width="353" height="58" fill="#f7e8de"/><text x="78" y="244" class="address">0x401100  value:</text><text x="78" y="270" class="mono">mov eax, 13</text>
+<text x="78" y="304" class="address">0x401105</text><text x="78" y="330" class="mono">ret</text>
+<text x="234" y="219" text-anchor="middle" class="small">⋮　間の命令は省略　⋮</text>
+<text x="585" y="71" class="body" font-weight="600">メモリ：スタック領域</text>
+<rect x="580" y="85" width="292" height="215" rx="5" fill="#fffef9" stroke="#d9bd9f"/>
+<text x="598" y="113" class="small">保存場所のアドレス</text>
+<text x="598" y="139" class="mono">0x0FF8</text>
+<rect x="590" y="153" width="272" height="71" rx="4" fill="#e9eee5" stroke="#355d4c" stroke-width="2"/>
+<text x="607" y="182" class="mono" style="fill:#355d4c;font-weight:600">0x401005</text>
+<text x="607" y="207" class="small">中身：戻り先の住所（８バイト）</text>
+<text x="598" y="251" class="address">0x1000</text>
+<text x="598" y="279" class="body">以前からのデータ</text>
+<!-- callが保存するのは、次の命令のアドレス -->
+<path d="M415 176H580" fill="none" stroke="#355d4c" stroke-width="3" marker-end="url(#call-map-green)"/>
+<text x="497" y="139" text-anchor="middle" class="body save">① 住所を保存</text>
+<text x="497" y="160" text-anchor="middle" class="address">0x401005</text>
+<path d="M60 124H31V258H60" fill="none" stroke="#ac4b30" stroke-width="3" marker-end="url(#call-map-orange)"/>
+<text x="70" y="377" class="body jump">② RIPをvalueの住所へ変える</text>
+<text x="70" y="405" class="small">次に実行するのは mov eax, 13。</text>
+<text x="70" y="432" class="small">命令そのものを移動するわけではない。</text>
+<rect x="475" y="345" width="397" height="100" rx="5" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="492" y="370" class="small">CPU内部のレジスタ（callの実行後）</text>
+<text x="492" y="400" class="mono jump">RIP = 0x401100</text>
+<text x="492" y="428" class="mono">RSP = 0x0FF8</text>
+<path d="M872 417H884V139H854" fill="none" stroke="#355d4c" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#call-map-green)"/>
+<text x="585" y="325" class="small">RSPを0x1000から８減らして、そこに保存。</text>
+<text x="20" y="471" class="small">緑の矢印：戻り先の住所を保存。橙の矢印：実行位置がcallからvalueへ移る。</text>
+</g>
+<g transform="translate(0 585)">
+<rect x="1" y="1" width="898" height="485" rx="8" fill="#f8f6f0" stroke="#dcded3"/>
+<text x="20" y="33" class="head">Ｂ　ret：スタックの住所を読み、コード領域へ戻る</text>
+<text x="70" y="71" class="body" font-weight="600">メモリ：コード領域</text>
+<rect x="60" y="85" width="355" height="259" rx="5" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="78" y="110" class="address">0x401000</text><text x="78" y="136" class="mono">call value</text>
+<rect x="61" y="150" width="353" height="58" fill="#f7e8de"/><text x="78" y="170" class="address">0x401005  after_call:</text><text x="78" y="196" class="mono">add eax, 1</text>
+<text x="78" y="244" class="address">0x401100  value:</text><text x="78" y="270" class="mono">mov eax, 13</text>
+<text x="78" y="304" class="address">0x401105</text><text x="78" y="330" class="mono">ret</text>
+<text x="234" y="219" text-anchor="middle" class="small">⋮　間の命令は省略　⋮</text>
+<text x="585" y="71" class="body" font-weight="600">メモリ：スタック領域</text>
+<rect x="580" y="85" width="292" height="215" rx="5" fill="#fffef9" stroke="#d9bd9f"/>
+<text x="598" y="113" class="small">保存場所のアドレス</text>
+<text x="598" y="139" class="mono">0x0FF8</text>
+<rect x="590" y="153" width="272" height="71" rx="4" fill="#e9eee5" stroke="#355d4c" stroke-width="2"/>
+<text x="607" y="182" class="mono" style="fill:#355d4c;font-weight:600">0x401005</text>
+<text x="607" y="207" class="small">中身：戻り先の住所（８バイト）</text>
+<text x="598" y="251" class="address">0x1000</text>
+<text x="598" y="279" class="body">以前からのデータ</text>
+<text x="430" y="114" class="address save">RSP = 0x0FF8</text>
+<text x="430" y="138" class="small">が指す先頭 →</text>
+<path d="M590 187H452V395H475" fill="none" stroke="#355d4c" stroke-width="3" marker-end="url(#call-map-green)"/>
+<text x="464" y="252" class="body save">① 読み出す</text>
+<text x="464" y="280" class="small">値をRIPへ</text>
+<rect x="475" y="345" width="397" height="100" rx="5" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="492" y="370" class="small">CPU内部のレジスタ（retの実行後）</text>
+<text x="492" y="400" class="mono jump">RIP = 0x401005</text>
+<text x="492" y="428" class="mono">RSP = 0x1000</text>
+<path d="M475 395H31V184H60" fill="none" stroke="#ac4b30" stroke-width="3" marker-end="url(#call-map-orange)"/>
+<text x="70" y="375" class="body jump">② この住所のaddから再開</text>
+<text x="70" y="430" class="small">RIPがコード領域の戻り先を指す。</text>
+<text x="585" y="325" class="small">読んだ後にRSPを８増やす。</text>
+<text x="20" y="471" class="small">movでEAXは13に。続くretが保存した住所へ戻し、addで13に１を足す。</text>
+</g>
+<text x="20" y="1101" class="body">スタックの「場所」0x0FF8 と、そこに入った「戻り先」0x401005 を分けて見る。</text>
+</svg><figcaption class="caption">x86-64の通常の近距離呼び出しを簡略化。<strong>スタックの先頭を指すのはRSP</strong>で、<code>ret</code> はその場所の８バイトをRIPへ読み込む。命令はコード領域に置いたまま。アドレスは説明用で、コードとスタックの間の距離・配置は表していない。この直接呼び出しの <code>call</code> は、機械語では次の命令からの相対距離で移動先を表す。<code>ret</code> 後も、読み出した値のビット列はメモリに残りうる。</figcaption></figure>
+ </section>
+
+ <section id="check">
+  <h2><span class="num">05</span>理解を確かめる</h2>
+  <p class="caption">答えを開く前に、頭の中で短く説明してみる。</p>
+  <details><summary><span class="question">問１</span><code>mov rax, rdi</code> のあと、RDIの値は消える？</summary><p>消えない。値のコピーなので、RDIは5のまま、RAXも5になる。命令名を「移動」と訳すだけでは、状態変化を読み違えやすい。</p></details>
+  <details><summary><span class="question">問２</span><code>call</code> を単なるジャンプにすると、何が足りない？</summary><p>戻り先の保存が足りない。飛ぶことはできても、対応する <code>ret</code> が取り出す戻り先を、そのジャンプはスタックに積んでくれない。</p></details>
+  <details><summary><span class="question">問３</span>関数の返り値13は、スタックから取り出す？</summary><p>この例ではRAXにある。スタックから取り出すのは「戻り先のアドレス」。結果の値と実行を再開する場所は、別々に受け渡す。</p></details>
+  <details><summary><span class="question">問４</span>Cからアセンブリを出せたら、すぐCPUで実行できる？</summary><p>アセンブリは文字なので、アセンブルが必要。さらに必要な部品をリンクして実行ファイルにし、読み込んで実行する。本書のコンパイラは、その手前のアセンブリ出力を担当する。</p></details>
+ </section>
+
+ <section class="sources" id="sources">
+  <h3>原書と参照先</h3>
+  <ol>
+   <li><a href="https://www.sigbus.info/compilerbook#機械語とアセンブラ">植山 類『低レイヤを知りたい人のためのCコンパイラ作成入門』「機械語とアセンブラ」</a> — この教材の題材。本文の転載ではなく、章で扱う概念を独自に説明しています。</li>
+   <li><a href="https://gcc.gnu.org/onlinedocs/gcc/Overall-Options.html">GCC公式資料：コンパイル・アセンブル・リンクの段階</a></li>
+   <li><a href="https://sourceware.org/binutils/docs/as/i386_002dVariations.html">GNUアセンブラ公式資料：Intel記法</a></li>
+  </ol>
+  <div class="footer"><a href="calculator.html">第２章：電卓レベルの言語の作成 →</a><a href="#main">先頭に戻る ↑</a></div>
+ </section>
+</main>
+<script>
+const states = [
+ {rdi:'—',rsi:'—',rax:'—',rsp:'0x1000',stack:'戻り先はまだ積んでいない',text:'開始前。まずは第１引数をRDIに入れる。'},
+ {rdi:5,rsi:'—',rax:'—',rsp:'0x1000',stack:'戻り先はまだ積んでいない',text:'RDIに5を入れた。次は第２引数を用意する。'},
+ {rdi:5,rsi:8,rax:'—',rsp:'0x1000',stack:'戻り先はまだ積んでいない',text:'RSIに8を入れた。引数がそろったので、sumを呼べる。'},
+ {rdi:5,rsi:8,rax:'—',rsp:'0x0ff8',stack:'先頭の８バイト：04「続き」のアドレス',text:'callが戻り先を積み、sumへ移った。RSPは８減る。引数の値は変わらない。'},
+ {rdi:5,rsi:8,rax:5,rsp:'0x0ff8',stack:'先頭の８バイト：04「続き」のアドレス',text:'RDIの5をRAXにコピーした。RDIの値も5のまま残っている。'},
+ {rdi:5,rsi:8,rax:13,rsp:'0x0ff8',stack:'先頭の８バイト：04「続き」のアドレス',text:'RAXにRSIを足した。5＋8＝13。結果はRAXにあり、まだsumの中にいる。'},
+ {rdi:5,rsi:8,rax:13,rsp:'0x1000',stack:'この呼び出しの戻り先を取り出した',text:'retが戻り先を取り出し、04「続き」に戻った。RSPは８増え、返り値13はRAXに残っている。'}
+];
+let step=0;
+function render(){const s=states[step];for(const id of ['rdi','rsi','rax','rsp'])document.getElementById(id).textContent=s[id];document.getElementById('stack-content').textContent=s.stack;document.getElementById('explanation').textContent=s.text;document.getElementById('step-counter').textContent=step+' / 6';document.querySelectorAll('.instruction').forEach(el=>{const active=Number(el.dataset.step)===step;el.classList.toggle('active',active);if(active)el.setAttribute('aria-current','step');else el.removeAttribute('aria-current')});document.getElementById('next').disabled=step===6;document.getElementById('next').textContent=step===6?'観察完了':'１命令進める →'}
+document.getElementById('next').addEventListener('click',()=>{if(step<6)step++;render()});document.getElementById('reset').addEventListener('click',()=>{step=0;render()});render();
+</script>
+</body>
+</html>

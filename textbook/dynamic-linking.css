@@ -1,0 +1,12 @@
+.svg-defs{position:absolute;width:0;height:0;min-width:0;overflow:hidden}
+svg text{font-size:15px}svg .title{font-size:17px}svg .small{font-size:13px}svg .mono{font-size:18px}svg .body{font-size:15px}
+svg .empty{fill:#f8f6f0;stroke:#b7c4b7;stroke-dasharray:5 4}
+.dynamic-lab{border:1px solid #b7c4b7;border-radius:6px;background:#fffef9;margin:22px 0;padding:20px}
+.dynamic-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.dynamic-controls label{display:flex;gap:8px;align-items:center;font-size:13px}
+.dynamic-controls select{font:inherit;background:var(--paper);color:var(--ink);padding:8px;border:1px solid var(--line);border-radius:4px}
+#dynamic-count{font:13px monospace;margin-left:auto;color:var(--muted)}
+#dynamic-status{min-height:7em;background:var(--paper);border-left:3px solid var(--accent);padding:12px 15px;font-size:14px;line-height:1.8}
+.dynamic-columns{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:18px}.dynamic-columns h3{font-size:15px;margin:12px 0}.dynamic-columns p{font-size:13px}.dynamic-columns .note{min-height:4em;margin-top:10px}
+.dynamic-lab .scroll{overflow-x:auto}.sources ul{padding-left:20px}select:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+@media(max-width:660px){.dynamic-lab{padding:12px}.dynamic-columns{grid-template-columns:1fr;gap:0}#dynamic-status{min-height:10em}.dynamic-lab>.scroll::after{content:"図は横にスクロールできます →";font-size:11px;color:var(--muted)}}
+@media print{.dynamic-controls{display:none}.dynamic-lab .scroll{overflow:visible}}
