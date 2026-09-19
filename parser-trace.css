@@ -1,0 +1,9 @@
+.parser-trace{margin:22px 0;padding:20px;border:1px solid #b7c4b7;border-radius:5px;background:#fffef9}
+.parser-trace>.caption{margin-top:0}
+.parser-trace-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+#parser-trace-count{margin-left:auto;font:13px monospace;color:var(--muted)}
+#parser-trace-message{min-height:5.8em;padding:12px 14px;border-left:3px solid var(--accent);background:var(--paper);font-size:14px;line-height:1.8}
+.parser-trace .scroll{overflow-x:auto}
+.parser-trace button:disabled{opacity:.4;cursor:default}
+@media(max-width:600px){.parser-trace{padding:12px}#parser-trace-message{min-height:8em}.parser-trace-controls .button{padding:8px 10px}}
+@media print{.parser-trace-controls{display:none}}

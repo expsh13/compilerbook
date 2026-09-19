@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 610" role="img" aria-labelledby="decode-process-title decode-process-desc">
+<title id="decode-process-title">CPUは命令の形式を読んで、命令の終わりを判断する</title>
+<desc id="decode-process-desc">64ビットモードでアドレスAから48、89、F8を読む例。48は64ビット幅の指定で、まだ操作が必要。89はコピー操作で、対象を指定するModR/Mバイトが必要。F8でRDIからRAXへのレジスタ間コピーとわかり、この形式では追加のアドレスや定数が不要なので３バイトで終わる。次の命令はA+3から。F8が常に終端記号なのではない。</desc>
+<defs><marker id="decode-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ac4b30"/></marker></defs>
+<style>text{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;fill:#292e2b}.small{font-size:14px;fill:#666d66}.body{font-size:16px}.bold{font-size:17px;font-weight:600}.mono{font-family:monospace;font-size:24px;fill:#ac4b30}.step{font-family:monospace;font-size:15px;fill:#355d4c}</style>
+<rect width="720" height="610" rx="6" fill="#fffef9"/>
+<text x="20" y="30" class="bold">命令の先頭 A から、形式に沿って読み解く</text>
+<text x="20" y="57" class="small">x86-64の64ビットモード ／ 読み解く順序を示す概念図</text>
+<g text-anchor="middle">
+<text x="98" y="86" class="small">A</text><text x="270" y="86" class="small">A + 1</text><text x="442" y="86" class="small">A + 2</text><text x="614" y="86" class="small">A + 3</text>
+<rect x="20" y="96" width="156" height="47" rx="4" fill="#e9eee5"/><rect x="192" y="96" width="156" height="47" rx="4" fill="#e9eee5"/><rect x="364" y="96" width="156" height="47" rx="4" fill="#e9eee5"/><rect x="536" y="96" width="156" height="47" rx="4" fill="#f2e9dc"/>
+<text x="98" y="127" class="mono">48</text><text x="270" y="127" class="mono">89</text><text x="442" y="127" class="mono">F8</text><text x="614" y="126" class="body">次の命令…</text>
+</g>
+<path d="M20 152V164H520V152" fill="none" stroke="#355d4c"/>
+<text x="270" y="187" text-anchor="middle" class="small">なぜ、この３バイトで区切れる？</text>
+<rect x="20" y="207" width="672" height="91" rx="5" fill="#f8f6f0" stroke="#dcded3"/>
+<text x="38" y="234" class="step">① 48 を読む</text>
+<text x="192" y="237" class="bold">「64ビットの値を扱う」という指定</text>
+<text x="192" y="264" class="body">まだ「何をするか」がわからない。</text>
+<text x="192" y="285" class="small">→ 操作を表すバイトが必要</text>
+<path d="M96 301V321" stroke="#ac4b30" stroke-width="2" marker-end="url(#decode-arrow)"/>
+<rect x="20" y="329" width="672" height="91" rx="5" fill="#f8f6f0" stroke="#dcded3"/>
+<text x="38" y="356" class="step">② 89 を読む</text>
+<text x="192" y="359" class="bold">「コピーする」という操作</text>
+<text x="192" y="386" class="body">まだ「どこから、どこへ」がわからない。</text>
+<text x="192" y="407" class="small">→ この形式では対象を指定する１バイトが必要</text>
+<path d="M96 423V443" stroke="#ac4b30" stroke-width="2" marker-end="url(#decode-arrow)"/>
+<rect x="20" y="451" width="672" height="100" rx="5" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="38" y="478" class="step">③ F8 を読む</text>
+<text x="192" y="481" class="bold">「RDIからRAXへ」と対象が決まる</text>
+<text x="192" y="508" class="body">この形式では追加のアドレスや定数は不要。</text>
+<text x="192" y="535" class="bold" style="fill:#355d4c">必要な情報がそろった → ここで１命令が完了</text>
+<text x="20" y="581" class="small">F8が「終わりの印」なのではなく、命令の形式から長さが決まる。</text>
+<text x="20" y="604" class="small">この命令は３バイトなので、次は A + 3 から読み解く。</text>
+</svg>

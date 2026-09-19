@@ -1,0 +1,35 @@
+.navigation-toggle{position:fixed;top:12px;left:16px;z-index:4;display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--green);font:13px/1.5 "Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;box-shadow:0 2px 8px #292e2b0a;cursor:pointer}
+.navigation-toggle[hidden]{display:none}
+.navigation-toggle svg{width:18px;height:18px;min-width:0;flex:none;fill:none;stroke:currentColor;stroke-width:1.8}
+.navigation-toggle:focus-visible,#textbook-navigation a:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+#textbook-navigation{position:fixed;inset:0 auto 0 0;width:250px;height:100vh;padding:76px 24px 30px;border-right:1px solid var(--line);border-bottom:0;display:flex;flex-direction:column;gap:0;background:var(--paper);overflow-y:auto;font:13px/1.9 "Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif}
+#textbook-navigation>*{flex-shrink:0}
+#textbook-navigation .brand{display:flex;align-items:center;font-size:13px;font-weight:700;letter-spacing:.08em;line-height:1.6}
+#textbook-navigation .brand-mark{display:inline-grid;place-items:center;flex:none;background:var(--green);color:white;width:30px;height:32px;margin-right:10px;border-radius:3px}
+#textbook-navigation .volume{display:block;font-size:12px;color:var(--muted);line-height:1.8;margin:30px 0 20px}
+#textbook-navigation .volume>br{display:none}
+#textbook-navigation .volume a{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:start;margin-top:6px;color:var(--green);font-size:12px;line-height:1.8;text-decoration:none}
+#textbook-navigation .volume a span:first-child{text-decoration:underline;text-underline-offset:4px}
+#textbook-navigation nav{display:grid;gap:5px;margin:0;overflow:visible}
+#textbook-navigation nav a{display:flex;align-items:baseline;white-space:normal;text-decoration:none;color:var(--muted);font-size:13px;line-height:1.8;padding:9px 10px;border-left:2px solid transparent}
+#textbook-navigation nav a:hover,#textbook-navigation nav a[aria-current]{border-color:var(--accent);color:var(--accent);background:#efece3}
+#textbook-navigation .navno{display:inline;flex:none;font:12px/1.8 monospace;margin-right:12px;opacity:.7}
+#textbook-navigation .sidebar-bottom{display:block;margin-top:auto;padding-top:28px;font-size:11px;color:var(--muted);line-height:1.8}
+#textbook-navigation .sidebar-bottom a{font-size:12px}
+body.navigation-ready main{margin-left:250px}
+html:has(.navigation-ready){scroll-padding-top:70px}
+@media(max-width:760px){
+  #textbook-navigation{position:static;width:auto;height:auto;padding:76px 20px 20px;border-right:0;border-bottom:1px solid var(--line)}
+  #textbook-navigation .volume{margin:20px 0}
+  #textbook-navigation .volume a{max-width:280px}
+  #textbook-navigation nav{display:flex;overflow-x:auto;gap:4px}
+  #textbook-navigation nav a{white-space:nowrap;padding:4px 10px;font-size:12px}
+  #textbook-navigation .navno,#textbook-navigation .sidebar-bottom{display:none}
+  body.navigation-ready main{margin-left:0}
+}
+#textbook-navigation[hidden]{display:none}
+body.navigation-ready.navigation-closed main{margin-left:auto;margin-right:auto;padding-top:76px}
+@media print{
+  .navigation-toggle,#textbook-navigation{display:none}
+  body.navigation-ready main,body.navigation-ready.navigation-closed main{margin:0;padding:0;max-width:none}
+}

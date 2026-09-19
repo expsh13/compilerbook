@@ -1,0 +1,12 @@
+.svg-defs{position:absolute;width:0;height:0;min-width:0;overflow:hidden}
+svg text{font-size:15px}svg .title{font-size:17px}svg .small{font-size:13px}svg .mono{font-size:18px}svg .body{font-size:15px}
+.type-lab{border:1px solid #b7c4b7;border-radius:6px;background:#fffef9;margin:22px 0;padding:20px}
+.type-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.type-controls label{display:flex;gap:8px;align-items:center;font-size:13px;max-width:100%}
+.type-controls select{font:inherit;background:var(--paper);color:var(--ink);padding:8px;border:1px solid var(--line);border-radius:4px;max-width:100%;min-width:0}
+#type-count{font:13px monospace;margin-left:auto;color:var(--muted)}
+#type-status{min-height:7em;background:var(--paper);border-left:3px solid var(--accent);padding:12px 15px;font-size:14px;line-height:1.8}
+.type-declaration{overflow:auto;background:var(--code);color:#e6eee4;border-radius:4px;padding:20px;margin:18px 0}.type-declaration code{white-space:pre;font-size:17px;line-height:2.2}.type-current{background:#f2d4a9;color:#242e29;border-bottom:3px solid var(--accent);border-radius:2px}
+.type-lab .scroll{overflow-x:auto}.sources ul{padding-left:20px}select:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+@media(max-width:660px){.type-lab{padding:12px}.type-controls label{display:block;width:100%}.type-controls select{display:block;width:100%}#type-status{min-height:11em}.type-lab>.scroll::after{content:"図は横にスクロールできます →";font-size:11px;color:var(--muted)}}
+@media print{.type-controls{display:none}.type-declaration{background:#eee;color:#222}.type-lab .scroll{overflow:visible}}
+@media(min-width:661px) and (max-width:1100px){body:not(.navigation-closed) figure:has(.scroll)::after,body:not(.navigation-closed) .type-lab>.scroll::after{content:"図は横にスクロールできます →";display:block;font-size:11px;color:var(--muted);margin-top:8px}}

@@ -1,0 +1,47 @@
+<svg id="process-memory-map" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 1035" role="img" aria-labelledby="process-memory-title process-memory-desc">
+<title id="process-memory-title">１つのプロセスから見える仮想メモリの全体像</title>
+<desc id="process-memory-desc">低いアドレスから高いアドレスへ、コード、読み取り専用データ、データ、BSS、ヒープ、未割り当てのすき間、共有ライブラリやファイルのマッピング、メインスレッドのスタックを並べた概念図。実際の配置や大きさは環境で異なる。スタックは低いアドレス側へ伸び、RSPは使用中の先頭を指す。レジスタはこのメモリの地図の外にあるCPU内部の記憶領域。</desc>
+<style>#process-memory-map text{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;fill:#292e2b}#process-memory-map .title{font-size:24px;font-weight:600}#process-memory-map .head{font-size:21px;font-weight:600;fill:#355d4c}#process-memory-map .body{font-size:18px}#process-memory-map .small{font-size:16px;fill:#666d66}</style>
+<defs><marker id="memory-map-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ac4b30"/></marker></defs>
+<rect width="960" height="1035" rx="6" fill="#fffef9"/>
+<text x="24" y="36" class="title">１つのプログラムから見える、メモリの地図</text>
+<text x="24" y="65" class="small">Linux・x86-64のユーザー空間を簡略化した一例。位置・順序・面積は固定ではない。</text>
+<text x="24" y="95" class="small">低いアドレス</text>
+<path d="M58 117V909" fill="none" stroke="#ac4b30" stroke-width="2" marker-end="url(#memory-map-arrow)"/>
+<text x="24" y="939" class="small">高いアドレス</text>
+<rect x="130" y="110" width="380" height="76" rx="4" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="150" y="141" class="head">コード領域</text><text x="150" y="170" class="body">call・mov・ret などの機械語</text>
+<text x="548" y="140" class="body">CPUが実行する命令がある。</text><text x="548" y="169" class="small">RIPが、この中の命令位置を指す。</text>
+<rect x="130" y="196" width="380" height="64" rx="4" fill="#eef1e8" stroke="#b7c4b7"/>
+<text x="150" y="234" class="head">読み取り専用データ領域</text>
+<text x="548" y="224" class="body">文字列リテラルなど。</text><text x="548" y="249" class="small">通常、プログラムからは書き換えない。</text>
+<rect x="130" y="270" width="380" height="64" rx="4" fill="#f2e9dc" stroke="#d9bd9f"/>
+<text x="150" y="309" class="head">データ領域</text>
+<text x="548" y="296" class="body">初期値を持つグローバル変数など。</text><text x="548" y="323" class="small">書き換えながら、長く保持する値。</text>
+<rect x="130" y="344" width="380" height="64" rx="4" fill="#f2e9dc" stroke="#d9bd9f"/>
+<text x="150" y="383" class="head">BSS（ゼロ初期化データ）</text>
+<text x="548" y="370" class="body">ゼロで始まるグローバル変数など。</text><text x="548" y="397" class="small">データ領域・BSSにはstatic変数も入る。</text>
+<rect x="130" y="418" width="380" height="76" rx="4" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="150" y="449" class="head">ヒープ領域</text><text x="150" y="478" class="body">実行中に確保するデータ</text>
+<text x="548" y="447" class="body">mallocなどで必要な容量を確保。</text><text x="548" y="476" class="small">動的確保には、別の領域を使う場合もある。</text>
+<rect x="130" y="504" width="380" height="74" rx="4" fill="#fffef9" stroke="#b7c4b7" stroke-dasharray="6 5"/>
+<text x="150" y="547" class="head">未割り当てのすき間</text>
+<text x="548" y="536" class="body">アドレスはあっても、使えるとは限らない。</text><text x="548" y="563" class="small">物理メモリの「空き容量」とも別の話。</text>
+<rect x="130" y="588" width="380" height="90" rx="4" fill="#e8edf0" stroke="#b9c7cf"/>
+<text x="150" y="623" class="head">共有ライブラリ・ファイルなど</text><text x="150" y="653" class="body">メモリに対応付けた領域</text>
+<text x="548" y="615" class="body">ライブラリの命令やデータ、</text><text x="548" y="643" class="body">mmapで対応付けたファイルなど。</text><text x="548" y="670" class="small">複数の領域に分かれて配置される。</text>
+<text x="305" y="709" text-anchor="middle" class="small">⋮　すき間などを省略　⋮</text>
+<rect x="130" y="728" width="380" height="178" rx="4" fill="#fffef9" stroke="#ac4b30"/>
+<rect x="131" y="729" width="378" height="77" fill="#faf3e8"/>
+<text x="150" y="759" class="body">スタックが伸びるための余地</text><text x="150" y="788" class="small">使用範囲は低いアドレス側へ広がる ↑</text>
+<rect x="131" y="806" width="378" height="99" fill="#e9eee5"/>
+<text x="150" y="839" class="head">スタック：使用中の部分</text><text x="150" y="872" class="body">戻り先・一部のローカル変数など</text>
+<path d="M631 806H516" stroke="#ac4b30" stroke-width="2" marker-end="url(#memory-map-arrow)"/>
+<text x="649" y="813" class="head">← RSPが指す先頭</text>
+<path d="M572 786V737" stroke="#ac4b30" stroke-width="2" marker-end="url(#memory-map-arrow)"/>
+<text x="592" y="751" class="body">積むとRSPが減る</text><text x="592" y="778" class="small">使える範囲には上限がある。</text>
+<text x="548" y="849" class="small">ここはメインスレッドのスタック。</text><text x="548" y="876" class="small">ほかのスレッドには別のスタックがある。</text>
+<rect x="130" y="947" width="806" height="63" rx="4" fill="#f8f6f0" stroke="#dcded3"/>
+<text x="150" y="974" class="body">RIP・RSP・EAXなどのレジスタは、この地図の外の「CPU内部」にある。</text>
+<text x="150" y="998" class="small">これは仮想アドレスの地図。RAMが物理的にこの順序で並んでいる図ではない。</text>
+</svg>

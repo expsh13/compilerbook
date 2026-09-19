@@ -1,0 +1,74 @@
+<svg id="stack-layout" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 790" role="img" aria-labelledby="stack-layout-title stack-layout-desc">
+<title id="stack-layout-title">call valueで戻り先を保存し、retでafter_callへ戻る</title>
+<desc id="stack-layout-desc">戻り先after_callのアドレスを仮に0x401005とする。call valueはRSPを0x1000から0x0FF8に減らし、その場所に0x401005を保存する。mov eax,13はEAXだけを変え、スタックは変えない。retは保存したアドレスを読み、RSPを0x1000に戻す。after_callのadd eax,1で13が14になる。</desc>
+<style>#stack-layout text{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;fill:#292e2b}#stack-layout .title{font-size:23px;font-weight:600}#stack-layout .head{font-size:18px;font-weight:600;fill:#355d4c}#stack-layout .body{font-size:16px}#stack-layout .small{font-size:14px;fill:#666d66}#stack-layout .addr{font-family:monospace;font-size:15px}#stack-layout .rsp{font-family:monospace;font-size:17px;fill:#ac4b30;font-weight:600}</style>
+<defs><marker id="stack-pointer-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ac4b30"/></marker></defs>
+<rect width="960" height="790" rx="6" fill="#fffef9"/>
+<text x="24" y="36" class="title">保存するのは、after_call のアドレス</text>
+<text x="24" y="65" class="body">after_call: の次の add eax, 1 に戻る。その命令のアドレスを仮に 0x401005 とする。</text>
+<text x="24" y="91" class="small">下は同じスタック領域の変化。１マス＝８バイト。アドレスはすべて説明用の仮の値。</text>
+<rect x="24" y="112" width="288" height="430" rx="5" fill="#f8f6f0" stroke="#dcded3"/>
+<text x="36" y="142" class="head">call value の直前</text>
+<text x="36" y="172" class="rsp">RSP = 0x1000</text>
+<text x="36" y="201" class="small">EAX：値はまだ指定していない</text>
+<text x="109" y="235" class="small">低いアドレス ↑</text>
+<text x="34" y="279" class="addr">0x0FE8</text><rect x="110" y="249" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="199" y="280" text-anchor="middle" class="small">使用範囲の外</text>
+<text x="34" y="329" class="addr">0x0FF0</text><rect x="110" y="299" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="199" y="330" text-anchor="middle" class="small">使用範囲の外</text>
+<text x="34" y="379" class="addr">0x0FF8</text><rect x="110" y="349" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="199" y="380" text-anchor="middle" class="small">使用範囲の外</text>
+<text x="34" y="429" class="addr">0x1000</text><rect x="110" y="399" width="178" height="50" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="199" y="430" text-anchor="middle" class="small">以前からのデータ</text>
+<rect x="110" y="399" width="178" height="50" fill="none" stroke="#ac4b30" stroke-width="2"/><path d="M308 424H293" stroke="#ac4b30" stroke-width="2" marker-end="url(#stack-pointer-arrow)"/>
+<text x="34" y="479" class="addr">0x1008</text><rect x="110" y="449" width="178" height="50" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="199" y="480" text-anchor="middle" class="small">以前からのデータ</text>
+<text x="110" y="524" class="small">高いアドレス ↓</text>
+<text x="24" y="568" class="small">次に実行：call value</text>
+<text x="24" y="592" class="small">戻り先は、直後の add の位置。</text>
+<rect x="336" y="112" width="288" height="430" rx="5" fill="#f8f6f0" stroke="#dcded3"/>
+<text x="348" y="142" class="head">① call → ② mov の実行後</text>
+<text x="348" y="172" class="rsp">RSP = 0x0FF8</text>
+<text x="348" y="201" class="small">EAX = 13（mov eax, 13）</text>
+<text x="421" y="235" class="small">低いアドレス ↑</text>
+<text x="346" y="279" class="addr">0x0FE8</text><rect x="422" y="249" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="511" y="280" text-anchor="middle" class="small">使用範囲の外</text>
+<text x="346" y="329" class="addr">0x0FF0</text><rect x="422" y="299" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="511" y="330" text-anchor="middle" class="small">使用範囲の外</text>
+<text x="346" y="379" class="addr">0x0FF8</text><rect x="422" y="349" width="178" height="50" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="511" y="370" text-anchor="middle" class="addr">0x401005</text><text x="511" y="390" text-anchor="middle" class="small">after_call のアドレス</text>
+<rect x="422" y="349" width="178" height="50" fill="none" stroke="#ac4b30" stroke-width="2"/><path d="M620 374H605" stroke="#ac4b30" stroke-width="2" marker-end="url(#stack-pointer-arrow)"/>
+<text x="346" y="429" class="addr">0x1000</text><rect x="422" y="399" width="178" height="50" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="511" y="430" text-anchor="middle" class="small">以前からのデータ</text>
+<text x="346" y="479" class="addr">0x1008</text><rect x="422" y="449" width="178" height="50" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="511" y="480" text-anchor="middle" class="small">以前からのデータ</text>
+<text x="422" y="524" class="small">高いアドレス ↓</text>
+<text x="336" y="568" class="small">call が８バイト確保し、住所を保存。</text>
+<text x="336" y="592" class="small">mov はEAXに13を入れる。</text>
+<text x="336" y="616" class="small">13をスタックに積むわけではない。</text>
+<rect x="648" y="112" width="288" height="430" rx="5" fill="#f8f6f0" stroke="#dcded3"/>
+<text x="660" y="142" class="head">③ ret の直後</text>
+<text x="660" y="172" class="rsp">RSP = 0x1000</text>
+<text x="660" y="201" class="small">EAX = 13（そのまま）</text>
+<text x="733" y="235" class="small">低いアドレス ↑</text>
+<text x="658" y="279" class="addr">0x0FE8</text><rect x="734" y="249" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="823" y="280" text-anchor="middle" class="small">使用範囲の外</text>
+<text x="658" y="329" class="addr">0x0FF0</text><rect x="734" y="299" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="823" y="330" text-anchor="middle" class="small">使用範囲の外</text>
+<text x="658" y="379" class="addr">0x0FF8</text><rect x="734" y="349" width="178" height="50" fill="#fffef9" stroke="#b7c4b7"/>
+<text x="823" y="370" text-anchor="middle" class="addr">0x401005</text><text x="823" y="390" text-anchor="middle" class="small">値は残るが使用範囲外</text>
+<text x="658" y="429" class="addr">0x1000</text><rect x="734" y="399" width="178" height="50" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="823" y="430" text-anchor="middle" class="small">以前からのデータ</text>
+<rect x="734" y="399" width="178" height="50" fill="none" stroke="#ac4b30" stroke-width="2"/><path d="M932 424H917" stroke="#ac4b30" stroke-width="2" marker-end="url(#stack-pointer-arrow)"/>
+<text x="658" y="479" class="addr">0x1008</text><rect x="734" y="449" width="178" height="50" fill="#e9eee5" stroke="#b7c4b7"/>
+<text x="823" y="480" text-anchor="middle" class="small">以前からのデータ</text>
+<text x="734" y="524" class="small">高いアドレス ↓</text>
+<text x="648" y="568" class="small">ret が 0x401005 を読み出す。</text>
+<text x="648" y="592" class="small">RIPに戻り先を設定し、RSPを８増加。</text>
+<text x="648" y="616" class="small">次に実行：after_call の add。</text>
+<rect x="24" y="646" width="912" height="78" rx="5" fill="#f2e9dc" stroke="#d9bd9f"/>
+<text x="43" y="675" class="head">④ after_call: の add eax, 1 を実行 → EAX は13から14へ</text>
+<text x="43" y="704" class="body">この add はスタックを変えない。RSPは0x1000のまま、呼び出し元の処理が続く。</text>
+<text x="24" y="756" class="small">RSPは「保存場所（0x0FF8など）」を指す。そこに入る「戻り先（0x401005）」とは別のアドレス。</text>
+<text x="24" y="780" class="small">retはメモリを消去しない。RSPが戻ると、取り出した枠は使用中の範囲から外れる。</text>
+</svg>

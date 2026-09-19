@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ja"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>分割コンパイルとリンク｜自分で育てる教科書</title>
+<meta name="description" content="ヘッダ、オブジェクト、シンボル、再配置、ライブラリ、Makefileをコード例とSVG図でつなぐ教科書。">
+<link rel="stylesheet" href="calculator.css"><link rel="stylesheet" href="linking.css"><link rel="stylesheet" href="navigation.css?v=2">
+<script src="navigation.js?v=2" defer></script><script src="linking.js" defer></script>
+</head><body>
+<a class="skip" href="#main">本文へ移動</a>
+<button id="navigation-toggle" class="navigation-toggle" type="button" aria-controls="textbook-navigation" aria-expanded="true" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM10 5v14"/></svg><span>ナビを閉じる</span></button>
+<aside class="sidebar" id="textbook-navigation">
+<div class="brand"><span class="brand-mark" aria-hidden="true">本</span>自分で育てる教科書</div>
+<div class="volume">コンパイラをつくる / 第３章<br><a href="index.html"><span>第１章：機械語とアセンブラ</span><span aria-hidden="true">→</span></a><br><a href="calculator.html"><span>第２章：電卓レベルの言語</span><span aria-hidden="true">→</span></a><br><a href="functions.html"><span>第４章：関数とローカル変数</span><span aria-hidden="true">→</span></a><br><a href="integers.html"><span>第５章：コンピュータにおける整数の表現</span><span aria-hidden="true">→</span></a><br><a href="pointers.html"><span>第６章：ポインタと文字列リテラル</span><span aria-hidden="true">→</span></a><br><a href="program.html"><span>第７章：プログラムの実行イメージと初期化式</span><span aria-hidden="true">→</span></a><br><a href="dynamic-linking.html"><span>第８章：スタティックリンクとダイナミックリンク</span><span aria-hidden="true">→</span></a><br><a href="types.html"><span>第９章：Cの型の構文</span><span aria-hidden="true">→</span></a></div>
+<nav aria-label="この章の目次"><a href="#separate"><span class="navno">01</span>ファイルを分けても呼び出せる</a>
+<a href="#headers"><span class="navno">02</span>ヘッダが渡すのは型の情報</a>
+<a href="#link"><span class="navno">03</span>名前から呼び出し先を決める</a>
+<a href="#definitions"><span class="navno">04</span>宣言・定義とリンクエラー</a>
+<a href="#libraries"><span class="navno">05</span>ライブラリもコンパイル済みの部品</a>
+<a href="#make"><span class="navno">06</span>ステップ８と作り直す範囲</a>
+<a href="#check"><span class="navno">07</span>理解を確かめる</a></nav>
+<div class="sidebar-bottom">少し読んで、仕組みを追って、<br>自分の言葉にしてみる。<br><br><a href="https://www.sigbus.info/compilerbook#分割コンパイルとリンク" target="_blank" rel="noreferrer">原書の章を開く ↗</a></div></aside>
+<main id="main"><div class="topline"><span>コンパイラをつくる / 第３章</span><span>第１版 · 2026.09.16</span></div>
+<header><div class="eyebrow">別々に作った命令を、ひとつにつなぐ</div><h1>分割コンパイルと<br>リンク</h1>
+<p class="lede">別のファイルにある関数を、その中身を読まずに呼び出せる。<br>「呼び方を知る」と「呼び出し先を決める」を分けると、その仕組みが見えてくる。</p>
+<div class="goal"><b>この章の到達点</b>ヘッダだけでは実行できない理由と、変更したファイルだけを作り直せる理由を説明できる。</div>
+<p class="caption">原書の「電卓レベルの言語の作成」に続く章。対象は分割コンパイルの概念とステップ８。図とコードは本教材独自の例。コマンドはLinux・GCC／GNUツールを想定する。</p></header>
+<section id="separate"><h2><span>01</span>ファイルを分けても呼び出せる</h2>
+<p>第１章の「13を返す関数を呼び、１を足す」を、２つのCファイルに分ける。この章では、<strong>コンパイラ自身を作るCコードの整理</strong>を学ぶ。自作言語に新しい計算機能を足す段階ではない。</p>
+<div class="codebox"><div class="codehead">value.h：共通の宣言</div><pre><code>#ifndef VALUE_H
+#define VALUE_H
+int value(void);
+#endif</code></pre></div>
+<div class="columns"><div class="codebox"><div class="codehead">main.c：呼び出す側</div><pre><code>#include "value.h"
+
+int main(void) {
+    return value() + 1;
+}</code></pre></div><div class="codebox"><div class="codehead">value.c：実体を用意する側</div><pre><code>#include "value.h"
+
+int value(void) {
+    return 13;
+}</code></pre></div></div>
+<p><code>main.c</code> を処理するコンパイラには、<code>value.c</code> の本体を渡さなくてよい。<code>value()</code> の呼び方はヘッダで確認し、呼び出し先が未確定のままオブジェクトを作れる。</p>
+<figure><div class="scroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 290" role="img" aria-labelledby="separate-title"><title id="separate-title">２つのCファイルを別々にオブジェクトにし、最後にリンクする</title><rect x="18" y="18" width="190" height="75" rx="5" class="frame"/><text x="34" y="48" class="title">main.c</text><text x="34" y="73" class="small">value() を使う</text><rect x="18" y="112" width="190" height="75" rx="5" class="frame"/><text x="34" y="142" class="title">value.c</text><text x="34" y="167" class="small">value() を定義する</text><path d="M222 47l18 8-18 8Z" fill="#ac4b30"/><path d="M222 141l18 8-18 8Z" fill="#ac4b30"/><rect x="257" y="18" width="194" height="75" rx="5" class="frame"/><text x="273" y="48" class="title">main.o</text><text x="273" y="73" class="small">main の命令と未解決の参照</text><rect x="257" y="112" width="194" height="75" rx="5" class="frame"/><text x="273" y="142" class="title">value.o</text><text x="273" y="167" class="small">value の命令と定義情報</text><path d="M460 55H490V102H528M460 149H490V102" class="link"/><path d="M530 94l18 8-18 8Z" fill="#ac4b30"/><rect x="559" y="66" width="183" height="75" rx="5" class="warm"/><text x="575" y="96" class="title">実行ファイル</text><text x="575" y="121" class="small">demo</text><text x="25" y="228">① 各 .c をコンパイル・アセンブル</text><text x="470" y="228">② リンカで結合</text><text x="25" y="266" class="small">.o は機械語を含む部品。リンクが済んでから実行し、結果として14が返る。</text></svg></div><figcaption>図では起動用のコードや標準ライブラリを省略。実行ファイルの起動では、通常、起動用コードを経てmainが呼ばれる。</figcaption></figure>
+<div class="codebox"><div class="codehead">同じフォルダに３ファイルを置いた場合</div><pre><code>cc -std=c11 -Wall -Wextra -c main.c -o main.o
+cc -std=c11 -Wall -Wextra -c value.c -o value.o
+cc main.o value.o -o demo
+./demo
+echo $?    # 14</code></pre></div>
+<p><code>-c</code> はリンクの手前、オブジェクト生成まで進める指定。最後の <code>cc</code> はコンパイラのドライバとしてリンカなどを起動する。<code>cc main.c value.c -o demo</code> と一度に頼む書き方でも、通常は別々の翻訳単位として処理される。ここではLTOなどの全体最適化は扱わない。</p>
+<p class="note">分割すると役割を整理できるうえ、変更していない部分の .o を再利用できる。ただし、変更後には必要な .o を作り直し、通常は実行ファイルも再リンクする。</p>
+<p class="source">参照：<a href="https://gcc.gnu.org/onlinedocs/gcc/Overall-Options.html">GCCの処理段階と -c</a>。</p></section>
+<section id="headers"><h2><span>02</span>ヘッダが渡すのは型の情報</h2>
+<p><code>int value(void);</code> という宣言から、コンパイラは「引数なしで呼び、intの結果を受け取る」とわかる。どの命令で13を計算するか、実行時に何番地に置くかは、この宣言には含まれない。</p>
+<figure><div class="scroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 272" role="img" aria-labelledby="header-title"><title id="header-title">同じヘッダを各Cファイルへ取り込み、それぞれ独立した翻訳単位を作る</title><rect x="233" y="14" width="292" height="69" rx="5" class="frame"/><text x="249" y="44" class="title">value.h</text><text x="249" y="69" class="small">int value(void);</text><path d="M306 83V105H183V127M456 83V105H577V127" class="link"/><rect x="18" y="133" width="338" height="83" rx="5" class="frame"/><text x="34" y="163" class="title">main.c ＋ ヘッダの内容</text><text x="34" y="188" class="small">宣言を見て、呼び出すコードを作る</text><rect x="402" y="133" width="338" height="83" rx="5" class="frame"/><text x="418" y="163" class="title">value.c ＋ ヘッダの内容</text><text x="418" y="188" class="small">宣言と定義の型が一致するか確認する</text><text x="22" y="253" class="small">それぞれが「翻訳単位」。通常、この .h を単独で .o にしてリンクすることはない。</text></svg></div><figcaption>#includeは前処理で内容を取り込む仕組み。別ファイルの関数本体を探して実行する仕組みではない。</figcaption></figure>
+<p>ヘッダには、共有する関数宣言、構造体の型定義、<code>typedef</code> などをまとめる。本体を書く <code>value.c</code> にも同じヘッダを入れると、宣言と実装の型の食い違いをその翻訳単位で検出できる。</p>
+<details><summary>#ifndef〜#endif は何を防ぐ？</summary><p>同じ翻訳単位の中でヘッダを重ねて取り込むことを防ぐ「インクルードガード」。別々の .c に１回ずつ取り込むことは防がない。したがって、ヘッダに外部公開する関数本体を書いたときの重複定義対策にはならない。</p></details>
+<p class="note">定義も宣言の一種。「ヘッダには定義を一切書けない」という意味ではない。構造体の型定義や、用途を限定したstatic inline関数などは書ける。この章では、外部から使う通常の関数本体・変数の実体を１つの .c に置く。</p>
+<p class="source">参照：<a href="https://gcc.gnu.org/onlinedocs/cpp/Header-Files.html">GCCのヘッダの説明</a>、<a href="https://gcc.gnu.org/onlinedocs/cpp/Once-Only-Headers.html">インクルードガード</a>。</p></section>
+<section id="link"><h2><span>03</span>名前から呼び出し先を決める</h2>
+<p><strong>シンボル</strong>は、関数や変数を名前で参照するための情報。今回の <code>main.o</code> は「valueを使う」、<code>value.o</code> は「valueの実体はここ」と記録する。リンカは参照と定義を対応付け、部品の配置を決め、必要な修正をする。</p>
+<figure><div class="scroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 345" role="img" aria-labelledby="symbol-title"><title id="symbol-title">リンカが参照と定義を対応付け、機械語の修正箇所を埋める</title><rect x="18" y="18" width="338" height="119" rx="5" class="frame"/><text x="34" y="48" class="title">main.o</text><text x="34" y="73" class="small">定義：main ／ 未解決の参照：value</text><text x="34" y="112" class="small">再配置情報：この呼び出しをvalueに接続</text><rect x="405" y="18" width="337" height="119" rx="5" class="frame"/><text x="421" y="48" class="title">value.o</text><text x="421" y="73" class="small">定義：value</text><text x="421" y="112" class="small">valueの機械語が入っている</text><path d="M187 144V176H570V144M380 176V199" class="link"/><rect x="18" y="208" width="724" height="114" rx="5" class="warm"/><text x="34" y="238" class="title">リンカ：名前を解決 → 配置を決定 → 参照箇所を修正</text><text x="34" y="263" class="small">実行ファイル内の呼び出しが、valueの実体へつながる</text><text x="34" y="295" class="small">呼び出しの修正に使う「位置・対象の名前・計算方法」などが再配置情報。</text></svg></div><figcaption>名前を対応付けるのがシンボル解決。配置に応じたアドレスや差分を参照箇所へ反映するのが再配置（リロケーション）。</figcaption></figure>
+<h3>callには、８バイトの住所をそのまま埋める？</h3>
+<p>x86-64の直接呼び出しの一例では、<code>call</code> は「次の命令から呼び出し先までの差」を32ビットで持つ。下はリンク後の配置を仮定した説明用の数値だ。</p>
+<figure><div class="scroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 246" role="img" aria-labelledby="relocation-title"><title id="relocation-title">callの相対距離と、実行時にスタックへ保存する戻り先は別</title><text x="20" y="30" class="title">call の位置：0x401000 ／ 次の命令：0x401005</text><text x="20" y="63">value の位置：0x401020</text><rect x="18" y="88" width="344" height="95" rx="5" class="frame"/><text x="34" y="118" class="title">リンク時：差を命令に反映</text><text x="34" y="143" class="small">0x401020 − 0x401005 = 0x1B</text><rect x="398" y="88" width="344" height="95" rx="5" class="warm"/><text x="414" y="118" class="title">実行時：戻り先を保存</text><text x="414" y="143" class="small">スタックへ 0x401005 を８バイトで保存</text><text x="20" y="214" class="small">このcallの機械語の例：E8 1B 00 00 00（命令全体は５バイト）</text><text x="20" y="241" class="small">命令の長さ・呼び出し先への差・スタックへ積む戻り先の幅は、別々の話。</text></svg></div><figcaption>実際のオブジェクトには再配置種別や加数もある。共有ライブラリへの呼び出しが中継コードを経由する場合などは省略。</figcaption></figure>
+<p>ここで書き換えるのは<strong>出力するファイル内の参照箇所</strong>。リンカがプログラムを実行して、スタックに戻り先を積むわけではない。第１章の <code>call</code>・<code>ret</code> は、できた実行ファイルを動かすときの仕事だ。</p>
+<div class="codebox"><div class="codehead">部品に残る名前を確認する</div><pre><code>nm main.o
+nm value.o
+objdump -dr -M intel main.o</code></pre></div>
+<p class="caption"><code>nm</code> の通常の表示で <code>U value</code> は未定義の参照、<code>T value</code> はコード領域にある外部公開の定義を示す。<code>objdump -dr</code> は命令と再配置情報を一緒に見る。具体的なアドレス・命令列・記号は環境や最適化で変わる。</p></section>
+<section id="definitions"><h2><span>04</span>宣言・定義とリンクエラー</h2>
+<div class="columns"><div class="codebox"><div class="codehead">共有するヘッダ：存在と型を伝える</div><pre><code>extern int total;
+int value(void);</code></pre></div><div class="codebox"><div class="codehead">１つのCファイル：実体を用意する</div><pre><code>int total = 0;
+
+int value(void) {
+    return 13;
+}</code></pre></div></div>
+<p><code>extern int total;</code> だけでは保存場所を作らない。ファイルスコープの <code>int total;</code> は仮定義で、その翻訳単位内に別の定義がなければゼロ初期化される定義として扱われる。共有ヘッダには <code>extern</code> の宣言、実体は１か所、と区別すると迷いにくい。</p>
+<table><thead><tr><th>状態</th><th>止まる場所・理由</th></tr></thead><tbody>
+<tr><td>valueの宣言が見えない</td><td>コンパイル時に呼び方を確認できない。現代のCでは宣言なしの関数呼び出しは診断対象。</td></tr>
+<tr><td>宣言はあるが、value.oをリンクに渡さない</td><td>リンク時に参照先を見つけられない。典型的には <code>undefined reference</code>。</td></tr>
+<tr><td>通常の外部定義を２つ渡す</td><td>リンク時に定義が重複。典型的には <code>multiple definition</code>。</td></tr>
+<tr><td>ヘッダに関数本体を書き、２つの.cで取り込む</td><td>同じ外部定義が２つの.oに生まれる。ガードがあっても、翻訳単位が別なので防げない。</td></tr>
+</tbody></table>
+<p class="note">リンク成功は、型も実行結果も正しいという保証ではない。通常のリンカはCの関数宣言の型を完全には照合しない。共通ヘッダで呼び出し側と定義側の型をそろえることが大切だ。</p>
+<details><summary>static は「スタックに置く」という意味？</summary><p>違う。ファイルスコープの関数や変数に付けるstaticは、名前をその翻訳単位の内側に限定する。関数内のstatic変数は、関数から戻った後も値を保持する。どちらも「スタックに積む」という指定ではない。コンパイラの非公開の補助関数には、ファイルスコープのstaticが役立つ。</p></details>
+</section>
+<section id="libraries"><h2><span>05</span>ライブラリもコンパイル済みの部品</h2>
+<p><code>#include &lt;stdio.h&gt;</code> で読み込むのは、printfなどを使うための宣言。printfの実装はC標準ライブラリ側にある。通常の <code>cc</code> によるリンクでは標準ライブラリが追加されるため、ソースが１ファイルでも外部の部品を使っている。</p>
+<p><strong>アーカイブ（.a）</strong>は、複数の .o をまとめる入れ物。リンカは、必要な未解決シンボルを満たすメンバーを取り込める。通常は関数１個単位ではなく、まずオブジェクト単位で選ぶ。</p>
+<figure><div class="scroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 222" role="img" aria-labelledby="archive-title"><title id="archive-title">アーカイブから必要なオブジェクトを選ぶ</title><rect x="18" y="54" width="177" height="88" rx="5" class="frame"/><text x="34" y="84" class="title">main.o</text><text x="34" y="109" class="small">value が必要</text><path d="M212 88l18 8-18 8Z" fill="#ac4b30"/><rect x="249" y="18" width="254" height="165" rx="5" class="frame"/><text x="265" y="48" class="title">libvalue.a</text><text x="265" y="73" class="small">value.o：valueを定義</text><text x="265" y="106" class="small">ほかの .o もまとめられる</text><text x="265" y="151" class="small">必要なメンバーを取り込む →</text><path d="M521 88l18 8-18 8Z" fill="#ac4b30"/><rect x="557" y="54" width="185" height="88" rx="5" class="warm"/><text x="573" y="84" class="title">実行ファイル</text><text x="573" y="109" class="small">main ＋ value</text></svg></div><figcaption>通常のアーカイブを使う静的リンクの考え方。共有ライブラリ（Linuxの.so）では、実装を実行時に読み込んで使う部分が残る。</figcaption></figure>
+<div class="codebox"><div class="codehead">上のvalue.oをアーカイブにまとめる</div><pre><code>ar rcs libvalue.a value.o
+cc main.o -L. -lvalue -o demo
+./demo
+echo $?    # 14</code></pre></div>
+<p><code>-L.</code> は現在のフォルダもライブラリ検索に使う指定、<code>-lvalue</code> はlibvalueというライブラリを探す指定。このフォルダにlibvalue.aだけがある前提だ。GNUリンカではアーカイブを置く順番が重要なので、必要とする <code>main.o</code> を前に置く。</p>
+<p class="caption">ここではvalueの実装を実行ファイルへ取り込むが、標準ライブラリまで静的リンクする指定ではない。原書の「C標準ライブラリとアーカイブファイル」は見出しのみなので、この節は補足として加えている。</p>
+<p class="source">参照：<a href="https://sourceware.org/binutils/docs/binutils/ar.html">GNU ar</a>、<a href="https://sourceware.org/binutils/docs/ld/Options.html">GNU ldのライブラリ検索</a>。</p></section>
+<section id="make"><h2><span>06</span>ステップ８と作り直す範囲</h2>
+<p>原書のステップ８では、コンパイラを <code>main.c</code>・<code>parse.c</code>・<code>codegen.c</code> に分け、共有する宣言や型を <code>9cc.h</code> に集める。処理の意味を変えずに置き場所を変える段階なので、分割の前後で既存のテスト結果が一致することを確かめる。</p>
+<table><thead><tr><th>ファイル</th><th>担当</th></tr></thead><tbody><tr><td>main.c</td><td>入力から解析・コード生成へ処理をつなぐ。</td></tr><tr><td>parse.c</td><td>トークンや構文解析を扱う。</td></tr><tr><td>codegen.c</td><td>構文木からアセンブリを出す。</td></tr><tr><td>9cc.h</td><td>ファイル間で共有する型・関数宣言・extern宣言。</td></tr></tbody></table>
+<h3>Makefileは「何が何に依存するか」を書く</h3>
+<p>まず小さなvalueの例で読む。<code>ターゲット: 依存ファイル</code> の下に、そのターゲットを作るコマンドを書く。ターゲットがないか、依存ファイルより古ければ作り直す。</p>
+<div class="codebox"><div class="codehead">valueの例のMakefile（コマンド行の先頭はタブ）</div><pre><code>CC = cc
+CFLAGS = -std=c11 -Wall -Wextra -g
+OBJS = main.o value.o
+
+demo: $(OBJS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
+
+$(OBJS): value.h
+
+%.o: %.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $&lt; -o $@
+
+.PHONY: clean
+clean:
+	rm -f demo $(OBJS) libvalue.a</code></pre></div>
+<p><code>$@</code> は作るターゲット名、<code>$&lt;</code> は最初の依存ファイル名。<code>%.o: %.c</code> は対応する.cから.oを作るパターンルール。<code>.PHONY</code> はcleanをファイル名として扱わないための指定だ。</p>
+<div class="lab" id="rebuild-lab"><h3>変更するファイルを選ぶ</h3><p class="caption">一度ビルドが成功し、全ファイルが最新の状態を基準にした観察モデル。選ぶたびに、その基準から変更した場合を表示する。</p>
+<div class="presets" role="group" aria-label="変更するファイル"><button type="button" data-change="none" aria-pressed="true">変更なし</button><button type="button" data-change="main.c" aria-pressed="false">main.cを変更</button><button type="button" data-change="value.c" aria-pressed="false">value.cを変更</button><button type="button" data-change="value.h" aria-pressed="false">value.hを変更</button></div>
+<figure><div class="scroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 295" role="img" aria-labelledby="make-graph-title"><title id="make-graph-title">変更した入力から作り直すオブジェクトと実行ファイルへ影響が伝わる</title><g data-build="main.c"><rect x="18" y="18" width="179" height="65" rx="5" class="frame"/><text x="34" y="48" class="title">main.c</text></g><g data-build="value.c"><rect x="18" y="112" width="179" height="65" rx="5" class="frame"/><text x="34" y="142" class="title">value.c</text></g><g data-build="value.h"><rect x="18" y="207" width="179" height="65" rx="5" class="frame"/><text x="34" y="237" class="title">value.h</text></g><defs><marker id="build-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#8b9e8b"/></marker></defs><path d="M201 49H288" class="link" marker-end="url(#build-arrow)"/><path d="M201 143H288" class="link" marker-end="url(#build-arrow)"/><path d="M201 238H249V49M249 143H282" class="link"/><path d="M499 49H526V98H557" class="link" marker-end="url(#build-arrow)"/><path d="M499 143H526V98" class="link"/><g data-build="main.o"><rect x="297" y="18" width="195" height="65" rx="5" class="frame"/><text x="313" y="48" class="title">main.o</text></g><g data-build="value.o"><rect x="297" y="112" width="195" height="65" rx="5" class="frame"/><text x="313" y="142" class="title">value.o</text></g><g data-build="demo"><rect x="567" y="63" width="175" height="75" rx="5" class="frame"/><text x="583" y="93" class="title">demo</text><text x="583" y="118" class="small">実行ファイル</text></g><text x="298" y="234" class="small">矢印方向：入力 → 生成物</text><text x="298" y="262" class="small">茶色の枠：変更・作り直しの対象</text></svg></div><figcaption>ヘッダ変更は両方の.oへ波及する。関数本体だけの変更なら、その.cに対応する.oを作り直す。</figcaption></figure>
+<p id="rebuild-description" role="status" aria-live="polite">変更がないので、コンパイルもリンクも不要。</p>
+<div class="codebox"><pre id="rebuild-commands">実行するコマンドなし</pre></div><noscript><p>この観察欄の操作にはJavaScriptが必要です。</p></noscript>
+</div>
+<p class="note">makeは通常、内容の意味ではなく更新時刻と依存関係で判断する。ヘッダへの依存を書き忘れると、型を変えても古い.oを再利用してしまう。コンパイルオプションだけの変更も、このMakefileでは自動検出しないので作り直しが必要になる。</p>
+<details><summary>原書のMakefileを読むときの補足</summary><p><code>$(wildcard *.c)</code> は.cの一覧、<code>$(SRCS:.c=.o)</code> は拡張子を.oに置き換えた一覧を作る。原書では組み込みのコンパイル規則を利用しているが、上の例ではコマンドを明示した。静的リンクを指定する <code>-static</code> はリンク段階に渡す必要があるため、必要なら <code>LDFLAGS = -static</code> とする。CFLAGSに書くだけでリンク用のコマンドに必ず渡るわけではない。</p></details>
+</section>
+<section id="check"><h2><span>07</span>理解を確かめる</h2>
+<details><summary>ヘッダを入れればvalueの実体も使える？</summary><p>呼び方はわかるが、実体は増えない。定義を含むvalue.o、または対応するライブラリをリンクする必要がある。</p></details>
+<details><summary>main.oに未解決のvalueがあるのは失敗？</summary><p>分割コンパイルでは正常な途中状態。最終的なリンクで参照先を用意できればよい。</p></details>
+<details><summary>value.cのreturn 13をreturn 20に変えたら？</summary><p>ヘッダを変えなければvalue.oを作り直して再リンクする。main.oは再利用でき、実行結果は21になる。</p></details>
+<details><summary>リンカがcallの戻り先をスタックに積む？</summary><p>積まない。リンカはファイル内の呼び出し先への参照を整える。実行時にCPUがcallを実行すると、その時の次の命令位置をスタックに積む。</p></details>
+<details><summary>ヘッダを変更したら、どこまで作り直す？</summary><p>そのヘッダに依存する翻訳単位から.oを作り直し、再リンクする。この例では両方の.cがvalue.hを使うので、両方が対象。</p></details>
+<p class="note">第２章までの「文字列 → AST → 命令」は１つのコンパイラの中の処理。この章の「.c → .o → 実行ファイル」は、そのコンパイラ自体を組み立てる処理。２つの流れを区別して原書へ戻ろう。</p>
+</section>
+<section class="sources" id="sources"><h3>原書と参照先</h3><ul>
+<li><a href="https://www.sigbus.info/compilerbook#分割コンパイルとリンク">原書「分割コンパイルとリンク」</a> — 学習範囲とステップ８。</li>
+<li><a href="https://gcc.gnu.org/onlinedocs/gcc/Overall-Options.html">GCC：処理段階</a>・<a href="https://gcc.gnu.org/onlinedocs/cpp/Header-Files.html">ヘッダ</a>・<a href="https://gcc.gnu.org/onlinedocs/cpp/Once-Only-Headers.html">インクルードガード</a>。</li>
+<li><a href="https://sourceware.org/binutils/docs/ld/Options.html">GNU ld</a>・<a href="https://sourceware.org/binutils/docs/binutils/ar.html">GNU ar</a>・<a href="https://sourceware.org/binutils/docs/binutils/nm.html">GNU nm</a>。</li>
+<li><a href="https://www.gnu.org/software/make/manual/html_node/Rule-Example.html">GNU make：ルールと依存関係</a>。</li>
+</ul><p class="caption">動く観察欄は依存関係を説明するモデルで、ブラウザ内でCコンパイラやmakeを動かすものではない。</p>
+<div class="footer"><a href="calculator.html">← 第２章：電卓レベルの言語の作成</a><a href="functions.html">第４章：関数とローカル変数 →</a></div></section>
+</main></body></html>
