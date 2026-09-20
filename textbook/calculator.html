@@ -197,7 +197,7 @@ primary = num | "(" expr ")"</code></pre></div>
  <section id="stack">
   <h2><span>05</span>途中結果をスタックへ</h2>
   <p>木の形がわかっても、右側を計算している間、左側の値をどこかに残す必要がある。第１章で戻り先を保存した<strong>同じスタックの仕組み</strong>を、今度は計算途中の値に使う。</p>
-  <p>生成するコードには約束を１つ置く。<strong>「式１つを計算すると、スタックに結果を１つ残す」</strong>。左の式も右の式もこの約束を守れば、取り出して演算し、結果を積むだけで組み合わせられる。</p>
+  <p>生成するコードには約束を１つ置く。<strong>「式１つを評価すると、スタックにその値を１つ残す」</strong>。評価とは、式の値を求めること。<code>8</code> のような数だけの式も、評価するとその数が値になる。左の式も右の式もこの約束を守れば、取り出して演算し、結果を積むだけで組み合わせられる。</p>
   <figure><div class="scroll"><svg viewBox="0 0 760 269" role="img" aria-labelledby="stack-trace-title">
    <title id="stack-trace-title">8+3*2の途中結果がスタックに積まれ、１つにまとまる</title>
    <text x="18" y="28" class="title">8 + 3 * 2 の計算順：数を積む → 掛ける → 足す</text>
