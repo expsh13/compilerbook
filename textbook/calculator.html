@@ -296,20 +296,60 @@ movzx rax, al  # RAX全体を、その0か1にそろえる
 push rax       # 比較結果をスタックに積む</code></pre></div>
   <p><strong><code>cmp</code> だけでは、RAXに0や1は入らない。</strong>比較の状態は、CPU内部の「フラグ」という状態を記録するビットに残る。<code>sete</code> がその状態を見て、等しければ1、違えば0をALに書く。</p>
   <p>ALは別のレジスタ領域ではなく、<strong>RAXの下位８ビットを指す名前</strong>。ALだけを書き換えても、RAXの残りの56ビットは以前のままなので、<code>movzx</code> でそこをゼロにする。これでRAX全体を、整数の0か1として使える。</p>
-  <figure><div class="scroll"><svg viewBox="0 0 760 218" role="img" aria-labelledby="compare-title compare-desc">
-   <title id="compare-title">比較の状態を、スタックに積める整数の0か1へ変える</title>
-   <desc id="compare-desc">cmpはフラグを更新し、RAXの値はそのまま。seteは等しければALに1、違えば0を書く。movzxはALをRAXへゼロ拡張し、RAX全体を0か1にする。その後push raxで結果をスタックに積む。</desc>
-   <text x="18" y="29" class="title">図で追うのは、比較して「整数の0か1」を作る３命令</text>
-   <g class="frame"><rect x="16" y="54" width="215" height="104" rx="4"/><rect x="271" y="54" width="215" height="104" rx="4"/></g><rect x="526" y="54" width="218" height="104" rx="4" class="warm"/>
-   <g text-anchor="middle">
-    <text x="123" y="83" class="mono">cmp rax, rdi</text><text x="123" y="111">比較の状態 → フラグ</text><text x="123" y="140" class="small">RAXの値はまだ変わらない</text>
-    <text x="378" y="83" class="mono">sete al</text><text x="378" y="111">等しい：1 ／ 違う：0</text><text x="378" y="140" class="small">RAXの下位８ビットに書く</text>
-    <text x="635" y="83" class="mono">movzx rax, al</text><text x="635" y="111">RAX全体を0か1へ</text><text x="635" y="140" class="small">残りの56ビットをゼロに</text>
+  <figure id="compare-flow"><div class="scroll"><svg viewBox="0 0 1000 610" role="img" aria-labelledby="compare-title compare-desc">
+   <title id="compare-title">3と3、3と4を比較して、整数の1または0をスタックへ戻す流れ</title>
+   <desc id="compare-desc">3イコール3と3イコール4を対比する。左右の値をスタックからRAXとRDIへ取り出し、cmpがZero Flagを1または0にする。seteがフラグをALへ写し、movzxがRAX全体を整数の1または0にそろえ、最後にスタックへ積む。</desc>
+   <defs><marker id="compare-flow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#8b9e8b"/></marker></defs>
+   <text x="20" y="31" class="title">同じなら1、違えば0になるまで</text>
+   <text x="20" y="57" class="small">上段と下段で同じ命令を実行する。違いは cmp が記録する ZF の値。</text>
+   <g text-anchor="middle" class="small">
+    <text x="80" y="91">計算用スタック</text><text x="248" y="91">popでレジスタへ</text><text x="420" y="91">cmpで比較</text>
+    <text x="570" y="91">seteで値へ</text><text x="735" y="91">movzxで整数へ</text><text x="910" y="91">結果をpush</text>
    </g>
-   <g fill="#ac4b30"><path d="M242 96L260 104L242 112Z"/><path d="M497 96L515 104L497 112Z"/></g>
-   <text x="18" y="190" class="small">最後に push rax で結果を積む。足し算と同じく、２つの値から１つの値ができる。</text>
-   <text x="18" y="213" class="small">ここでの movzx はゼロ拡張の命令。原書の movzb に対応する表記。</text>
-  </svg></div></figure>
+
+   <rect x="10" y="108" width="970" height="205" rx="8" fill="#f3f6ef" stroke="#b7c4b7"/>
+   <text x="27" y="137" class="title">3 == 3　等しい場合</text>
+   <g text-anchor="middle">
+    <rect x="25" y="157" width="110" height="96" rx="5" fill="#fffef9" stroke="#b7c4b7"/>
+    <line x1="25" y1="205" x2="135" y2="205" stroke="#b7c4b7"/>
+    <text x="80" y="188">右：3</text><text x="80" y="236">左：3</text><text x="80" y="276" class="small">上がスタック先頭</text>
+    <rect x="168" y="157" width="160" height="96" rx="5" class="frame"/>
+    <text x="248" y="188" class="mono">RDI = 3</text><text x="248" y="229" class="mono">RAX = 3</text>
+    <rect x="360" y="157" width="120" height="96" rx="5" class="frame"/>
+    <text x="420" y="184" class="mono">cmp</text><text x="420" y="213">3 − 3 = 0</text><text x="420" y="240" class="title">ZF = 1</text>
+    <rect x="510" y="157" width="120" height="96" rx="5" class="frame"/>
+    <text x="570" y="184" class="mono">sete al</text><text x="570" y="218" class="title">AL = 1</text><text x="570" y="242" class="small">ZFを読む</text>
+    <rect x="665" y="157" width="140" height="96" rx="5" class="frame"/>
+    <text x="735" y="184" class="mono">movzx</text><text x="735" y="218" class="title">RAX = 1</text><text x="735" y="242" class="small">上位を0で埋める</text>
+    <rect x="840" y="157" width="140" height="96" rx="5" class="warm"/>
+    <text x="910" y="184" class="mono">push rax</text><text x="910" y="224" class="title">結果：1</text>
+   </g>
+   <g class="link" marker-end="url(#compare-flow-arrow)"><path d="M140 205H160"/><path d="M333 205H352"/><path d="M485 205H502"/><path d="M635 205H657"/><path d="M810 205H832"/></g>
+   <text x="360" y="289" class="small">ZF（Zero Flag）は、差が0なら1になる。cmpはRAXとRDIの値を変更しない。</text>
+
+   <rect x="10" y="329" width="970" height="205" rx="8" fill="#fbf4ea" stroke="#d9bd9f"/>
+   <text x="27" y="358" class="title">3 == 4　違う場合</text>
+   <g text-anchor="middle">
+    <rect x="25" y="378" width="110" height="96" rx="5" fill="#fffef9" stroke="#d9bd9f"/>
+    <line x1="25" y1="426" x2="135" y2="426" stroke="#d9bd9f"/>
+    <text x="80" y="409">右：4</text><text x="80" y="457">左：3</text><text x="80" y="497" class="small">上がスタック先頭</text>
+    <rect x="168" y="378" width="160" height="96" rx="5" class="warm"/>
+    <text x="248" y="409" class="mono">RDI = 4</text><text x="248" y="450" class="mono">RAX = 3</text>
+    <rect x="360" y="378" width="120" height="96" rx="5" class="warm"/>
+    <text x="420" y="405" class="mono">cmp</text><text x="420" y="434">3 − 4 ≠ 0</text><text x="420" y="461" class="title">ZF = 0</text>
+    <rect x="510" y="378" width="120" height="96" rx="5" class="warm"/>
+    <text x="570" y="405" class="mono">sete al</text><text x="570" y="439" class="title">AL = 0</text><text x="570" y="463" class="small">ZFを読む</text>
+    <rect x="665" y="378" width="140" height="96" rx="5" class="warm"/>
+    <text x="735" y="405" class="mono">movzx</text><text x="735" y="439" class="title">RAX = 0</text><text x="735" y="463" class="small">上位を0で埋める</text>
+    <rect x="840" y="378" width="140" height="96" rx="5" class="warm"/>
+    <text x="910" y="405" class="mono">push rax</text><text x="910" y="445" class="title">結果：0</text>
+   </g>
+   <g class="link" marker-end="url(#compare-flow-arrow)"><path d="M140 426H160"/><path d="M333 426H352"/><path d="M485 426H502"/><path d="M635 426H657"/><path d="M810 426H832"/></g>
+   <text x="360" y="510" class="small">差が0ではないのでZFは0。後続の命令は、その状態を整数の0に変える。</text>
+
+   <text x="20" y="570">cmpは答えを返さない。フラグに状態を残し、seteとmovzxが0/1へ変換する。</text>
+   <text x="20" y="599" class="small">ALはRAXの下位8ビット。seteの時点では上位56ビットを変更しないため、movzxでRAX全体を確実に0か1へそろえる。</text>
+  </svg></div><figcaption><code>pop</code> から <code>push</code> までのデータの流れ。緑の段は比較成立、茶色の段は不成立。ここでの <code>movzx</code> は原書の <code>movzb</code> に対応する表記。</figcaption></figure>
   <p>図は「等しいか」の場合。大小比較では、<code>sete</code> の代わりに、調べたい条件に対応する命令を使う。<strong>比較の状態を見て0か1を作り、スタックに積む</strong>という流れは共通だ。</p>
   <details><summary>補足：大小比較で、作る命令の種類を減らす</summary><p><code>a &gt; b</code> は <code>b &lt; a</code> と同じ大小関係を調べる。<code>&gt;</code> と <code>&gt;=</code> のASTを、左右を交換した <code>&lt;</code> と <code>&lt;=</code> の木に直せば、命令生成を共用できる。ここでは、式の値が評価順序に影響されない、この電卓言語の範囲を扱う。</p></details>
   <details><summary>比較まで含めた文法を見渡す</summary>
