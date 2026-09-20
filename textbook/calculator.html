@@ -247,6 +247,76 @@ primary = num | "(" expr ")"</code></pre></div>
    <rect x="690" y="548" width="300" height="82" rx="6" fill="#fbf4ea" stroke="#d9bd9f"/>
    <text x="708" y="578" class="title">実行時のメモリ</text><text x="708" y="608">生成プログラムのスタック。</text>
   </svg></div><figcaption>ASTを置くヒープと、生成されたプログラムが使うスタックは、時点も用途も異なる。ASTそのものを実行時スタックへ積むわけではない。</figcaption></figure>
+  <h3>ヒープ上のNodeを、ポインタで辿る</h3>
+  <p>木の線は、メモリ上ではNodeが持つアドレスとして保存される。コード生成器は、パーサーが返した <code>root</code> ポインタから始め、<code>lhs</code> と <code>rhs</code> のアドレスを読みながら別のNodeへ移る。</p>
+  <figure id="ast-memory-walk"><div class="scroll"><svg viewBox="0 0 1100 680" role="img" aria-labelledby="ast-memory-walk-title ast-memory-walk-desc">
+   <title id="ast-memory-walk-title">ヒープ上のASTノードをポインタで辿り、命令を出力する流れ</title>
+   <desc id="ast-memory-walk-desc">rootポインタはアドレス0xA100のADDノードを指す。ADDのlhsは0xA200の数値8、rhsは0xA300のMULノードを指す。MULは0xA400の数値3と0xA500の数値2を指す。コード生成器は左、右、親の順にノードを読み、push 8、push 3、push 2、imul、addを出力する。アドレスは説明用の仮の値。</desc>
+   <defs><marker id="ast-memory-pointer" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#8b9e8b"/></marker><marker id="ast-memory-step" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#ac4b30"/></marker></defs>
+   <text x="20" y="31" class="title">メモリの住所を読み、次のNodeへ移る</text>
+   <text x="20" y="57" class="small">アドレスとフィールド配置は説明用。Node同士がメモリ上で隣り合う必要はない。</text>
+
+   <rect x="10" y="82" width="660" height="566" rx="8" fill="#f3f6ef" stroke="#b7c4b7"/>
+   <text x="30" y="115" class="title">コンパイラのメモリ</text>
+   <rect x="30" y="137" width="190" height="58" rx="5" fill="#fffef9" stroke="#b7c4b7"/>
+   <text x="48" y="161" class="small">パーサーが返したポインタ</text><text x="48" y="184" class="mono">root = 0xA100</text>
+   <text x="30" y="226" class="small">ヒープ</text>
+
+   <g>
+    <rect x="30" y="244" width="280" height="116" rx="6" class="warm"/>
+    <text x="47" y="270" class="mono">0xA100</text><text x="160" y="270">ADD Node</text>
+    <line x1="30" y1="283" x2="310" y2="283" stroke="#d9bd9f"/>
+    <text x="47" y="310" class="mono">kind = ADD</text><text x="47" y="337" class="mono">lhs = 0xA200　rhs = 0xA300</text>
+
+    <rect x="360" y="244" width="280" height="116" rx="6" class="frame"/>
+    <text x="377" y="270" class="mono">0xA200</text><text x="490" y="270">NUM Node</text>
+    <line x1="360" y1="283" x2="640" y2="283" stroke="#b7c4b7"/>
+    <text x="377" y="310" class="mono">kind = NUM</text><text x="377" y="337" class="mono">value = 8</text>
+
+    <rect x="30" y="395" width="280" height="116" rx="6" class="warm"/>
+    <text x="47" y="421" class="mono">0xA300</text><text x="160" y="421">MUL Node</text>
+    <line x1="30" y1="434" x2="310" y2="434" stroke="#d9bd9f"/>
+    <text x="47" y="461" class="mono">kind = MUL</text><text x="47" y="488" class="mono">lhs = 0xA400　rhs = 0xA500</text>
+
+    <rect x="360" y="395" width="280" height="96" rx="6" class="frame"/>
+    <text x="377" y="421" class="mono">0xA400</text><text x="490" y="421">NUM Node</text>
+    <line x1="360" y1="434" x2="640" y2="434" stroke="#b7c4b7"/>
+    <text x="377" y="463" class="mono">value = 3</text>
+
+    <rect x="360" y="526" width="280" height="96" rx="6" class="frame"/>
+    <text x="377" y="552" class="mono">0xA500</text><text x="490" y="552">NUM Node</text>
+    <line x1="360" y1="565" x2="640" y2="565" stroke="#b7c4b7"/>
+    <text x="377" y="594" class="mono">value = 2</text>
+   </g>
+
+   <g class="link" marker-end="url(#ast-memory-pointer)">
+    <path d="M220 166H270V244"/>
+    <path d="M310 316H338V302H352"/>
+    <path d="M170 360V387"/>
+    <path d="M310 467H338V451H352"/>
+    <path d="M310 485H330V574H352"/>
+   </g>
+   <g class="small"><text x="274" y="153">rootの値を住所として読む</text><text x="319" y="294">lhs</text><text x="178" y="383">rhs</text><text x="318" y="444">lhs</text><text x="317" y="560">rhs</text></g>
+
+   <rect x="700" y="82" width="390" height="566" rx="8" fill="#fbf4ea" stroke="#d9bd9f"/>
+   <text x="720" y="115" class="title">コード生成器</text>
+   <text x="720" y="143" class="small">Nodeを読み、命令の文字列を順に出す。</text>
+   <g>
+    <rect x="720" y="166" width="350" height="66" rx="5" fill="#fffef9" stroke="#d9bd9f"/>
+    <text x="738" y="190" class="small">① [0xA100].kind は ADD</text><text x="738" y="216">先に lhs の 0xA200 へ</text>
+    <rect x="720" y="247" width="350" height="66" rx="5" fill="#fffef9" stroke="#d9bd9f"/>
+    <text x="738" y="271" class="small">② [0xA200].kind は NUM</text><text x="738" y="297" class="mono">push 8 を出力</text>
+    <rect x="720" y="328" width="350" height="86" rx="5" fill="#fffef9" stroke="#d9bd9f"/>
+    <text x="738" y="352" class="small">③ ADDへ戻り、rhsの0xA300へ</text><text x="738" y="378">MULの lhs → rhs を辿る</text><text x="738" y="401" class="mono">push 3　push 2</text>
+    <rect x="720" y="429" width="350" height="66" rx="5" fill="#fffef9" stroke="#d9bd9f"/>
+    <text x="738" y="453" class="small">④ 0xA300の子を読み終えた</text><text x="738" y="479" class="mono">imul を出力</text>
+    <rect x="720" y="510" width="350" height="66" rx="5" fill="#fffef9" stroke="#d9bd9f"/>
+    <text x="738" y="534" class="small">⑤ 0xA100の子を読み終えた</text><text x="738" y="560" class="mono">add を出力</text>
+   </g>
+   <g stroke="#ac4b30" stroke-width="2" fill="none" marker-end="url(#ast-memory-step)"><path d="M895 233V239"/><path d="M895 314V320"/><path d="M895 415V421"/><path d="M895 496V502"/></g>
+   <rect x="720" y="594" width="350" height="35" rx="4" fill="#242e29" stroke="#242e29"/>
+   <text x="738" y="618" class="small" style="fill:#e6eee4;font-family:monospace">push 8 → push 3 → push 2 → imul → add</text>
+  </svg></div><figcaption>コード生成器はNodeをヒープから削除して取り出すのではなく、アドレスを使って内容を読み取る。読み終えたASTは、コンパイル処理が終わるまでメモリ上に残る。</figcaption></figure>
   <div class="table-scroll"><table><thead><tr><th>段階</th><th>入力 → 出力</th><th>その時点で計算する？</th></tr></thead><tbody>
    <tr><td>構文解析時</td><td>トークン列 → AST</td><td>しない。演算のつながりをNodeとして保存する。</td></tr>
    <tr><td>コード生成時</td><td>AST → アセンブリ</td><td>しない。木の順番に命令を出力する。</td></tr>
