@@ -3,12 +3,16 @@
   const sidebar = document.getElementById('textbook-navigation');
   if (!toggle || !sidebar) return;
   document.body.classList.add('navigation-ready');
-  toggle.hidden = false;
-  toggle.addEventListener('click', () => {
-    const closed = document.body.classList.toggle('navigation-closed');
+  function setClosed(closed) {
+    document.body.classList.toggle('navigation-closed', closed);
     sidebar.hidden = closed;
     toggle.setAttribute('aria-expanded', String(!closed));
     toggle.querySelector('span').textContent = closed ? 'ナビを開く' : 'ナビを閉じる';
+  }
+  setClosed(true);
+  toggle.hidden = false;
+  toggle.addEventListener('click', () => {
+    setClosed(!document.body.classList.contains('navigation-closed'));
   });
   const sections = [...sidebar.querySelectorAll('nav a[href^="#"]')]
     .map(link => ({ link, section: document.getElementById(link.hash.slice(1)) }))
