@@ -236,6 +236,50 @@ push rax      # 商を戻す</code></pre></div></div>
   <p>構文解析では、左側の式を読み終えたところにある <code>-</code> は引き算として読む。これから数やカッコの式を読むところにある <code>-</code> は、その式に付く符号として読む。この符号は <code>-(3 + 2)</code> のように式にも付けられ、「その式の値の符号を反転する」という意味になる。</p>
   <p>そこで、数やカッコを読む <code>primary()</code> の手前に、符号を読む <code>unary()</code> を追加する。<code>mul()</code> は、これまでの <code>primary()</code> の代わりに <code>unary()</code> を呼ぶ。<code>unary()</code> は先頭の符号があれば読み、その後の数やカッコを <code>primary()</code> に任せる。</p>
   <p><strong><code>-3</code> を読んだら、左に0、右に3を持つ「引き算の木」を作る。</strong>そうすれば、すでに作った減算の命令生成をそのまま使える。<code>+3</code> なら、3のノードをそのまま返せばよい。符号がない場合も、読んだ木をそのまま返す。</p>
+  <figure id="unary-tree"><div class="scroll">
+   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 440" role="img" aria-labelledby="unary-tree-title unary-tree-desc">
+    <title id="unary-tree-title">符号を読んだ後、unaryが返す木</title>
+    <desc id="unary-tree-desc">入力がマイナス3なら、コンパイラが0と引き算のノードを追加し、左に0、右に3を持つ木を返す。プラス3と符号なしの3では、読み取った3のノードをそのまま返す。ここでは答えを計算せず、木を作る。</desc>
+    <defs><marker id="unary-tree-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#8b9e8b"/></marker></defs>
+    <text x="20" y="30" class="title">符号を読むと、どんな木になる？</text>
+    <text x="20" y="54" class="small">上：入力の式　／　下：unary() が返すAST</text>
+    <path d="M246 76 V416 M475 76 V416" stroke="#deded3" fill="none"/>
+    <g text-anchor="middle">
+     <rect x="72" y="78" width="100" height="44" rx="6" class="warm"/>
+     <text x="122" y="107" class="mono">-3</text>
+     <rect x="311" y="78" width="100" height="44" rx="6" class="frame"/>
+     <text x="361" y="107" class="mono">+3</text>
+     <rect x="548" y="78" width="100" height="44" rx="6" class="frame"/>
+     <text x="598" y="107" class="mono">3</text>
+     <text x="122" y="150" class="small">0 − 3 の形にする</text>
+     <text x="361" y="150" class="small">＋を読み、値は変えない</text>
+     <text x="598" y="150" class="small">符号がないので、そのまま</text>
+     <path d="M122 163 V195" class="link" marker-end="url(#unary-tree-arrow)"/>
+     <path d="M361 163 V195" class="link" marker-end="url(#unary-tree-arrow)"/>
+     <path d="M598 163 V195" class="link" marker-end="url(#unary-tree-arrow)"/>
+     <path d="M122 228 L62 308 M122 228 L182 308" class="link"/>
+     <circle cx="122" cy="228" r="26" class="warm"/>
+     <text x="122" y="235" class="mono">−</text>
+     <circle cx="62" cy="308" r="26" class="warm"/>
+     <text x="62" y="315" class="mono">0</text>
+     <circle cx="182" cy="308" r="26" class="frame"/>
+     <text x="182" y="315" class="mono">3</text>
+     <text x="62" y="356" class="small">追加した0</text>
+     <text x="182" y="356" class="small">読んだ3</text>
+     <circle cx="361" cy="228" r="26" class="frame"/>
+     <text x="361" y="235" class="mono">3</text>
+     <circle cx="598" cy="228" r="26" class="frame"/>
+     <text x="598" y="235" class="mono">3</text>
+     <text x="361" y="290" class="small">＋のノードは作らない</text>
+     <text x="598" y="290" class="small">数のノードだけ</text>
+     <text x="122" y="392">引き算の木を返す</text>
+     <text x="361" y="392">3のノードを返す</text>
+     <text x="598" y="392">3のノードを返す</text>
+     <text x="122" y="416" class="small">既存の減算の命令生成を使える</text>
+     <text x="480" y="416" class="small">どちらも、受け取ったノードをそのまま返す</text>
+    </g>
+   </svg>
+  </div><figcaption>この教材でのASTの作り方。−3の左にある0は入力にはなく、コンパイラが追加する。ここでは計算結果の−3を求めず、「0から3を引く」という構造を作る。</figcaption></figure>
   <p class="caption">値１つを受け取る符号の操作を「単項演算」、２つを受け取る引き算などを「二項演算」という。この段階の文法で読める単項の符号は１つまで。<code>-(-3)</code> は読めるが、<code>--3</code> は扱わない。</p>
 
   <h3>② 比較：「成り立つ？」の答えを0か1にする</h3>
