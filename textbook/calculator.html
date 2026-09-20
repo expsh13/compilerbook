@@ -19,10 +19,11 @@
   <a href="#tokens"><span class="navno">02</span>文字列を意味のある単位へ</a>
   <a href="#tree"><span class="navno">03</span>式のまとまりを木にする</a>
   <a href="#grammar"><span class="navno">04</span>文法を関数にする</a>
-  <a href="#stack"><span class="navno">05</span>途中結果をスタックへ</a>
-  <a href="#operators"><span class="navno">06</span>符号と比較を加える</a>
-  <a href="#observe"><span class="navno">07</span>変換の流れを観察する</a>
-  <a href="#check"><span class="navno">08</span>理解を確かめる</a>
+  <a href="#ast-lifetime"><span class="navno">05</span>ASTから実行までを分ける</a>
+  <a href="#stack"><span class="navno">06</span>途中結果をスタックへ</a>
+  <a href="#operators"><span class="navno">07</span>符号と比較を加える</a>
+  <a href="#observe"><span class="navno">08</span>変換の流れを観察する</a>
+  <a href="#check"><span class="navno">09</span>理解を確かめる</a>
  </nav>
  <div class="sidebar-bottom">少し読んで、仕組みを追って、<br>自分の言葉にしてみる。<br><br><a href="https://www.sigbus.info/compilerbook#電卓レベルの言語の作成" target="_blank" rel="noreferrer">原書の章を開く ↗</a></div>
 </aside>
@@ -194,8 +195,67 @@ primary = num | "(" expr ")"</code></pre></div>
   <p>この更新で、<code>16 - 6</code> の木が次の引き算の左側になる。<code>mul()</code> が自分の担当外の <code>+</code> を見たら、それを消費せずに戻ることも大切だ。</p>
  </section>
 
+ <section id="ast-lifetime">
+  <h2><span>05</span>ASTから実行までを分ける</h2>
+  <p><code>8 + 3 * 2</code> のASTを作ることと、答えの14を計算することは別の処理だ。<strong>コンパイラは、まずAST全体を作り、その木をたどってアセンブリを出す。</strong>計算は、できたプログラムをあとで実行したときに行われる。</p>
+  <figure><div class="scroll"><svg viewBox="0 0 1000 650" role="img" aria-labelledby="ast-lifetime-title ast-lifetime-desc">
+   <title id="ast-lifetime-title">ソースからAST、アセンブリ、実行時の計算へ進む三段階</title>
+   <desc id="ast-lifetime-desc">構文解析ではコンパイラのヒープにAST全体を作る。コード生成ではそのASTをたどってアセンブリ命令を出す。実行時には生成された別のプログラムが計算用スタックを使い、8と6を足して14を得る。ASTのメモリと実行時スタックは別物。</desc>
+   <defs><marker id="ast-lifetime-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#8b9e8b"/></marker></defs>
+   <text x="20" y="31" class="title">同じ式を、別の時間に別のデータとして扱う</text>
+   <text x="20" y="57" class="small">左から順に進む。構文解析中に3×2や8＋6を計算しているわけではない。</text>
+
+   <rect x="10" y="84" width="300" height="438" rx="8" fill="#f3f6ef" stroke="#b7c4b7"/>
+   <text x="28" y="116" class="title">1　構文解析時</text>
+   <text x="28" y="143">AST全体を組み立てる</text>
+   <text x="28" y="169" class="small">動いているもの：コンパイラ</text>
+   <rect x="28" y="188" width="264" height="306" rx="6" fill="#fffef9" stroke="#b7c4b7"/>
+   <text x="45" y="217" class="small">コンパイラのヒープ</text>
+   <g class="link"><path d="M160 273L92 339M160 273L228 339M228 339L194 407M228 339L262 407"/></g>
+   <g class="warm"><circle cx="160" cy="273" r="27"/><circle cx="228" cy="339" r="27"/></g>
+   <g class="frame"><circle cx="92" cy="339" r="27"/><circle cx="194" cy="407" r="27"/><circle cx="262" cy="407" r="27"/></g>
+   <g class="mono" text-anchor="middle"><text x="160" y="280">ADD</text><text x="92" y="346">8</text><text x="228" y="346">MUL</text><text x="194" y="414">3</text><text x="262" y="414">2</text></g>
+   <text x="45" y="458" class="small">各Nodeの lhs / rhs が</text><text x="45" y="480" class="small">別のNodeを指して木になる。</text>
+
+   <rect x="350" y="84" width="300" height="438" rx="8" fill="#f3f6ef" stroke="#b7c4b7"/>
+   <text x="368" y="116" class="title">2　コード生成時</text>
+   <text x="368" y="143">ASTをたどって命令を出す</text>
+   <text x="368" y="169" class="small">動いているもの：まだコンパイラ</text>
+   <rect x="368" y="188" width="264" height="306" rx="6" fill="#242e29" stroke="#242e29"/>
+   <g class="mono"><text x="389" y="228" style="fill:#e6eee4">mov rax, 8</text><text x="389" y="262" style="fill:#e6eee4">push rax</text><text x="389" y="306" style="fill:#e6eee4">mov rax, 3</text><text x="389" y="340" style="fill:#e6eee4">push rax</text><text x="389" y="384" style="fill:#e6eee4">mov rax, 2</text><text x="389" y="418" style="fill:#e6eee4">push rax</text><text x="389" y="452" style="fill:#e6eee4">imul / add ...</text></g>
+   <text x="368" y="511" class="small">この時点では命令を並べるだけ。</text>
+
+   <rect x="690" y="84" width="300" height="438" rx="8" fill="#fbf4ea" stroke="#d9bd9f"/>
+   <text x="708" y="116" class="title">3　実行時</text>
+   <text x="708" y="143">CPUが命令を実行する</text>
+   <text x="708" y="169" class="small">動いているもの：生成されたプログラム</text>
+   <text x="708" y="207" class="small">push 8 → push 3 → push 2</text>
+   <g class="frame"><rect x="714" y="295" width="82" height="42"/><rect x="714" y="253" width="82" height="42"/><rect x="714" y="211" width="82" height="42"/><rect x="810" y="295" width="82" height="42"/></g>
+   <rect x="810" y="253" width="82" height="42" class="warm"/><rect x="906" y="295" width="66" height="42" class="warm"/>
+   <g class="mono" text-anchor="middle"><text x="755" y="322">8</text><text x="755" y="280">3</text><text x="755" y="238">2</text><text x="851" y="322">8</text><text x="851" y="280">6</text><text x="939" y="322">14</text></g>
+   <g class="link" marker-end="url(#ast-lifetime-arrow)"><path d="M800 274H804"/><path d="M896 295H900"/></g>
+   <g text-anchor="middle" class="small"><text x="755" y="365">3 × 2</text><text x="851" y="365">8 ＋ 6</text><text x="939" y="365">結果</text></g>
+   <text x="708" y="415">実行時スタック</text><text x="708" y="441" class="small">途中の「値」を保存する。</text><text x="708" y="468" class="small">ここで初めて答えを計算する。</text>
+
+   <g class="link" marker-end="url(#ast-lifetime-arrow)"><path d="M316 300H342"/><path d="M656 300H682"/></g>
+   <text x="329" y="282" text-anchor="middle" class="small">木を</text><text x="329" y="325" text-anchor="middle" class="small">たどる</text>
+   <text x="669" y="282" text-anchor="middle" class="small">完成後に</text><text x="669" y="325" text-anchor="middle" class="small">実行</text>
+
+   <rect x="10" y="548" width="640" height="82" rx="6" fill="#f3f6ef" stroke="#b7c4b7"/>
+   <text x="28" y="578" class="title">コンパイラ側のメモリ</text><text x="28" y="608">ASTのNodeを保持。コンパイルが終われば役目を終える。</text>
+   <rect x="690" y="548" width="300" height="82" rx="6" fill="#fbf4ea" stroke="#d9bd9f"/>
+   <text x="708" y="578" class="title">実行時のメモリ</text><text x="708" y="608">生成プログラムのスタック。</text>
+  </svg></div><figcaption>ASTを置くヒープと、生成されたプログラムが使うスタックは、時点も用途も異なる。ASTそのものを実行時スタックへ積むわけではない。</figcaption></figure>
+  <div class="table-scroll"><table><thead><tr><th>段階</th><th>入力 → 出力</th><th>その時点で計算する？</th></tr></thead><tbody>
+   <tr><td>構文解析時</td><td>トークン列 → AST</td><td>しない。演算のつながりをNodeとして保存する。</td></tr>
+   <tr><td>コード生成時</td><td>AST → アセンブリ</td><td>しない。木の順番に命令を出力する。</td></tr>
+   <tr><td>実行時</td><td>機械語 → 実行結果</td><td>する。CPUが命令を実行し、値14を得る。</td></tr>
+  </tbody></table></div>
+  <p class="note">パーサが返すのは14ではなく、いちばん上の <code>ADD</code> Nodeへのポインタ。そのポインタから <code>lhs</code> と <code>rhs</code> をたどると、式全体のASTへ到達できる。</p>
+ </section>
+
  <section id="stack">
-  <h2><span>05</span>途中結果をスタックへ</h2>
+  <h2><span>06</span>途中結果をスタックへ</h2>
   <p>木の形がわかっても、右側を計算している間、左側の値をどこかに残す必要がある。第１章で戻り先を保存した<strong>同じスタックの仕組み</strong>を、今度は計算途中の値に使う。</p>
   <p>生成するコードには約束を１つ置く。<strong>「式１つを評価すると、スタックにその値を１つ残す」</strong>。評価とは、式の値を求めること。<code>8</code> のような数だけの式も、評価するとその数が値になる。左の式も右の式もこの約束を守れば、取り出して演算し、結果を積むだけで組み合わせられる。</p>
   <figure><div class="scroll"><svg viewBox="0 0 760 269" role="img" aria-labelledby="stack-trace-title">
@@ -223,7 +283,7 @@ push rax      # 商を戻す</code></pre></div></div>
  </section>
 
  <section id="operators">
-  <h2><span>06</span>符号と比較を加える</h2>
+  <h2><span>07</span>符号と比較を加える</h2>
   <p>ここまでは、四則演算とカッコを扱うコンパイラを作ってきた。この節では、<strong>数の前に符号を付ける式</strong>と、<strong>２つの値を比較する式</strong>も扱えるようにする。</p>
   <div class="table-scroll"><table><thead><tr><th>追加したい式</th><th>実行すると何が得られる？</th></tr></thead><tbody>
    <tr><td><code>-3</code>、<code>+3</code></td><td>符号を反転した値、またはそのままの値。この例では−3と3。</td></tr>
@@ -366,7 +426,7 @@ primary    = num | "(" expr ")"</code></pre></div>
  </section>
 
  <section id="observe">
-  <h2><span>07</span>変換の流れを観察する</h2>
+  <h2><span>08</span>変換の流れを観察する</h2>
   <p>式を変えると、トークン・AST・アセンブリが一緒に変わる。「１操作進める」で、生成コードが行うスタック操作を追ってみよう。</p>
   <div class="lab">
    <form id="expression-form"><label for="expression">変換する式</label><div class="input-row"><input id="expression" name="expression" value="8 + 3 * 2" maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="lab-limits"><button type="submit" class="button">式を変換する</button></div></form>
@@ -386,7 +446,7 @@ primary    = num | "(" expr ")"</code></pre></div>
  </section>
 
  <section id="check">
-  <h2><span>08</span>理解を確かめる</h2>
+  <h2><span>09</span>理解を確かめる</h2>
   <h3>確認するのは、出力した文字だけではない</h3>
   <p>実装の確認では、入力を自作コンパイラに渡し、出力したアセンブリをアセンブル・リンクして、できた実行ファイルの結果を確かめる。<code>make</code> はビルドを繰り返せる形にし、テストは機能を追加したときに以前の式が壊れていないか確かめる役割を持つ。</p>
   <p class="note">式の計算結果と、シェルで見る終了ステータスは区別する。Unixの終了ステータスとして観察できるのは下位８ビットなので、256は0、−1は255になる。原書のテストでは、式全体の結果を0〜255に収めると比較しやすい。観察欄は計算結果そのものと、下位８ビットの両方を表示する。</p>
