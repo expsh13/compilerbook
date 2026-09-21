@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="文字列を数と記号のトークンに分け、読み取り位置と出力の関係を実験で確かめる。">
+  <title>第３章　字句解析｜実験で理解するコンパイラ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">本文へ移動</a>
+  <details class="sidebar"><summary>目次</summary><aside>
+    <p class="brand">実験で理解する<br>コンパイラ</p><p class="edition">新しい教科書</p>
+    <nav aria-label="本の目次">
+      <a href="contents.html">目次　全体の章立て</a><a href="index.html">序章　本の構成</a>
+      <a href="machine-code.html">第１章　機械語とアセンブラ</a>
+      <a href="minimal-compiler.html">第２章　最小のコンパイラ</a>
+      <a href="tokenization.html" aria-current="page">第３章　字句解析</a>
+    </nav>
+    <nav class="contents" aria-label="この章の目次"><a href="#question">１　この章で扱う問い</a><a href="#theory">２　この章の理論</a><a href="#hands-on">３　ハンズオン</a><a href="#check">４　理解チェック</a></nav>
+    <a class="previous" href="../index.html">以前の教科書を読む</a>
+  </aside></details>
+  <main id="main">
+    <header><p class="eyebrow">第３章</p><h1>字句解析</h1><p class="lead">文字を一つずつ読み、次の処理が使える「数」と「記号」にまとめる。</p><p>前章のコンパイラは、入力全体を整数１個として読みました。今回は <code>12 + 3</code> を、数１２、記号＋、数３として取り出します。式の意味を考える前に、その材料をそろえる段階です。</p></header>
+    <section id="question" aria-labelledby="question-title">
+      <h2 id="question-title"><span class="number">１</span>この章で扱う問い</h2>
+      <p><strong>ソースコードの文字列から、意味のある単位をどう取り出すか？</strong></p>
+      <p><code>12</code> は２文字ですが一つの数です。一方、<code>1 2</code> は空白で分かれた二つの数です。この違いを保ちながら、数や記号を左から順に読み取る仕組みを作ります。</p>
+      <p>第２章の文字列、繰り返し、数字から数値への変換を使います。本章では字句解析器を単独で動かし、出力を観察します。前章のコンパイラは残します。命令の生成への接続は、式の構造を扱う次章以降で進めます。</p>
+    </section>
+    <section id="theory" aria-labelledby="theory-title">
+      <h2 id="theory-title"><span class="number">２</span>この章の理論</h2>
+      <h3>文字列を、トークンの並びにする</h3>
+      <p><strong>トークン</strong>とは、数や記号など、後続の処理が一まとまりとして扱う単位です。文字列を読んでトークンの並びを作る処理を<strong>字句解析</strong>、それを行う部分を字句解析器と呼びます。</p>
+      <figure class="concept-figure"><figcaption><strong>図１　文字の並びから、数と記号の並びへ</strong><span>角括弧は、一つのトークンの範囲を表します。</span></figcaption>
+        <div class="translation-flow"><div class="flow-stage"><code>12 + 3</code><small>入力：空白を含む６文字</small></div><div class="flow-arrow">↓ <span>数字の連続をまとめ、空白を読み飛ばす</span></div><div class="flow-stage focus-stage">［数：１２］［記号：＋］［数：３］［終了］<small>出力：次の処理へ渡すトークン列</small></div><div class="flow-arrow">↓ <span>次章の構文解析へ</span></div><div class="flow-stage">「１２と３を足す」という構造<small>この構造の組み立ては、まだ行わない</small></div></div>
+        <p class="figure-takeaway">字句解析が取り出すのは数と記号です。足し算の結果１５を出す処理ではありません。</p>
+      </figure>
+      <h3>トークンに何を保存するか</h3>
+      <p>次の処理では「これは数か、記号か」を知る必要があります。また、数なら値が必要です。エラーが起きた場所を説明できるよう、入力のどの範囲から取り出したかも保持します。今回の実装では、これらを一つにまとめた <code>Token</code> という構造体を使います。</p>
+      <pre><code>typedef enum { NUMBER, SYMBOL, END } TokenKind;
+
+typedef struct {
+    TokenKind kind;
+    size_t start;
+    size_t length;
+    int value;
+} Token;</code></pre>
+      <p><code>enum</code> は種類に名前を付ける仕組みで、<code>NUMBER</code> は数、<code>SYMBOL</code> は記号、<code>END</code> は終了を表します。<code>struct</code> は複数の項目をまとめます。<code>typedef</code> によって、その型を <code>Token</code> と短く書けます。</p>
+      <div class="table-scroll"><table><caption>入力が「12 + 3」のときの保存内容</caption><thead><tr><th>種類</th><th>開始位置</th><th>長さ</th><th>数値</th></tr></thead><tbody><tr><td>数１２</td><td>０</td><td>２</td><td>１２</td></tr><tr><td>記号＋</td><td>３</td><td>１</td><td>使わない</td></tr><tr><td>数３</td><td>５</td><td>１</td><td>３</td></tr><tr><td>終了</td><td>６</td><td>０</td><td>使わない</td></tr></tbody></table></div>
+      <p><code>start</code> と <code>length</code> は、元の文字列の開始位置と長さです。位置は０から数え、<code>size_t</code> はサイズや添字を表す整数型です。今回の入力は半角文字なので、文字の位置とバイト位置が一致します。日本語などの多バイト文字の位置表示は扱いません。</p>
+      <p>記号の種類は <code>source[token.start]</code> で元の文字列から読めます。つまり <code>SYMBOL</code> だけで＋と－を区別しているわけではありません。元の文字列を参照する設計なので、トークンを使い終わるまで入力文字列も保持します。<code>value</code> は数トークンにだけ使い、他の種類では０を入れておきます。</p>
+      <h3>読み取り位置は「次に読む文字」を指す</h3>
+      <p>入力を左から読むため、<code>pos</code> という位置を持ちます。その位置の文字に応じて、空白なら一文字進む、数字なら数字が続く限り読む、記号なら一文字のトークンにする、という処理を繰り返します。</p>
+      <figure class="concept-figure"><figcaption><strong>図２　読み取り位置が進み、出力が増える</strong><span>「・」は説明用の空白表示です。実際の入力は <code>12 + 3</code> です。</span></figcaption>
+        <pre><code>位置     0  1  2  3  4  5  6
+入力     1  2  ・ +  ・ 3  終端
+
+pos=0    数字が続く範囲「12」を読む
+    ↓    ［数１２］を追加
+pos=2    空白を読み飛ばす
+    ↓
+pos=3    「+」を１文字読む
+    ↓    ［記号＋］を追加
+pos=4    空白を読み飛ばす
+    ↓
+pos=5    「3」を読む
+    ↓    ［数３］を追加
+pos=6    終端に到達 → ［終了］を追加</code></pre>
+        <p class="figure-takeaway">１２を読んだ後の位置は２です。数字の直後の文字は、数を読む処理では消費せず、外側の処理に任せます。</p>
+      </figure>
+      <p>空白は先に全部削除しません。<code>1 2</code> の空白を削ると <code>12</code> になり、別の数へ変わってしまうからです。数を読む処理を空白で止め、次の繰り返しでその空白を飛ばすことで、境界を残します。</p>
+      <h3>どの文字を受け付けるか</h3>
+      <p>今回扱うのは、０〜２５５の整数、記号 <code>+ - * / ( )</code>、空白・タブ・改行です。数の範囲は前章にそろえた教材上の制限です。記号はすべて一文字で、<code>==</code> のような複数文字の記号はまだ扱いません。</p>
+      <p>字句解析の成功は、式としての正しさを保証しません。<code>9 +</code> も、<code>1 2</code> も、ここではトークンに分けられます。数や記号の並びが正しいか、括弧が対応するか、掛け算を先に行うかは、次章の構文解析が扱う問題です。</p>
+      <p>空の入力にも終了トークンを一つ付けます。<code>END</code> は元のソースに書かれた記号ではなく、後続の処理が「もう材料がない」と判断するために字句解析器が追加する印です。Ｃの文字列の終端 <code>'\0'</code> は入力の終わり、終了トークンは出力の終わりを表します。</p>
+      <h3>実装の中心を読む</h3>
+      <p>全体は <a href="labs/ch03/tokenize.c">tokenize.c</a> にあります。<code>tokenize</code> は入力 <code>source</code> を読み、配列 <code>tokens</code> に順番にトークンを保存します。<code>count</code> は保存した個数です。成功なら <code>true</code>、失敗なら <code>false</code> を返します。</p>
+      <pre><code>while (source[pos] != '\0') {
+    if (isspace((unsigned char)source[pos])) {
+        pos++;
+        continue;
+    }
+    size_t start = pos;
+    /* この後で、数字・記号・不明な文字に分けて処理する。 */
+}</code></pre>
+      <p>これは外側の繰り返しの抜粋です。<code>isspace</code> は空白類かを判定する関数です。文字を安全に渡すため <code>unsigned char</code> に変換しています。<code>pos++</code> は次の文字へ進む操作、<code>continue</code> は今回の繰り返しの残りを飛ばして次へ進む操作です。空白以外なら、読む前の位置を <code>start</code> に保存します。</p>
+      <pre><code>int value = 0;
+while (source[pos] &gt;= '0' &amp;&amp; source[pos] &lt;= '9') {
+    value = value * 10 + (source[pos] - '0');
+    if (value &gt; 255) {
+        fprintf(stderr, "位置%zu：整数は０〜２５５で入力してください。\n", start);
+        return false;
+    }
+    pos++;
+}
+tokens[(*count)++] = (Token){NUMBER, start, pos - start, value};</code></pre>
+      <p>この部分は、最初の文字が数字だと確認した後に入ります。<code>&amp;&amp;</code> は両方の条件を満たすという意味です。前章と同じ方法で数値を組み立て、数字以外に出会ったら止めます。最後の <code>pos - start</code> が読んだ文字数になります。</p>
+      <p><code>(Token){...}</code> は、構造体の項目順に「種類・位置・長さ・数値」を入れた一つのトークンです。<code>*count</code> は呼び出し元の個数を参照し、<code>(*count)++</code> は現在の個数を配列の添字に使ってから一つ増やします。配列の次の空き場所へ追加する書き方です。</p>
+      <p>記号の場合は <code>strchr("+-*/()", source[pos])</code> で対応する文字が一覧に含まれるかを調べます。見つかれば長さ１のトークンを追加し、一文字進みます。数字でも記号でも空白でもなければ、位置付きのエラーを標準エラー出力に書きます。</p>
+      <p>呼び出し側の <code>main</code> は <code>calloc</code> で配列用のメモリを確保し、字句解析に成功したら各トークンを <code>printf</code> で表示します。最大でも一文字につき一トークンなので、入力の長さ＋１個分を確保すれば終了トークンも収まります。最後に <code>free</code> で確保したメモリを解放します。</p>
+      <p class="note">表示はトークンを観察するためのものです。次の構文解析へ渡す本体は配列です。また、途中でエラーになった場合は配列を表示せず終了するので、成功した一部分だけを完成した出力と誤解せずに済みます。</p>
+    </section>
+    <section id="hands-on" aria-labelledby="hands-on-title">
+      <h2 id="hands-on-title"><span class="number">３</span>ハンズオン</h2>
+      <h3>準備：字句解析器を実行ファイルにする</h3>
+      <p>前章と同じコンテナを使います。閉じていたら、マック側のリポジトリで <code>make -f docker.mk shell</code> を実行して入り直します。以下はコンテナ内で実行します。</p>
+      <pre><code>cd /workspace/textbook/new/labs/ch03
+gcc -std=c11 -Wall -Wextra -o /tmp/ch03-tokenize tokenize.c</code></pre>
+      <p><code>cd</code> は実験ファイルのあるフォルダへ移動します。<code>gcc</code> はＣで書いた字句解析器をコンパイル・リンクし、<code>/tmp/ch03-tokenize</code> という実行ファイルを作ります。ここでは、入力式の実行ファイルを作っているわけではありません。</p>
+      <h3>実験１：複数桁の数と位置を見る</h3>
+      <p>入力 <code>12 + 3</code> のトークン数、数の値、開始位置、長さを予想してから実行します。終了トークンも数えてください。</p>
+      <pre><code>/tmp/ch03-tokenize '12 + 3'
+echo $?</code></pre>
+      <p>引用符によって、空白や記号を含む文字列全体を一つの引数として渡します。引用符自体は入力に含まれません。<code>echo $?</code> は、直前の字句解析器が成功したかを表示します。式の計算結果を表示するものではありません。</p>
+      <details><summary>実行後に開く：出力の読み方</summary><pre><code>数 値=12 位置=0 長さ=2
+記号 '+' 位置=3 長さ=1
+数 値=3 位置=5 長さ=1
+終了 位置=6 長さ=0</code></pre><p>最後の <code>echo</code> は０を表示します。１２を一つの数として取り出し、空白はトークンにせず、元の文字列での位置は保っています。</p></details>
+      <h3>実験２：空白が変えるもの、変えないもの</h3>
+      <pre><code>/tmp/ch03-tokenize '12+3'
+/tmp/ch03-tokenize '12 + 3'
+/tmp/ch03-tokenize '1 2+3'</code></pre>
+      <p>各入力について、種類・値の並びと、位置・長さを分けて比較します。最初の二つは何が一致するでしょうか。三つ目では数トークンがいくつになるでしょうか。</p>
+      <details><summary>比較後に開く</summary><p>最初の二つは数１２、＋、数３、終了という並びが同じですが、位置が異なります。三つ目は数１、数２、＋、数３、終了です。空白は数字の連続を終わらせるため、１と２をまとめません。</p></details>
+      <h3>実験３：字句解析の成功と、式の正しさを分ける</h3>
+      <pre><code>/tmp/ch03-tokenize '9 +'
+echo $?
+/tmp/ch03-tokenize '9 @ 3'
+echo $?</code></pre>
+      <p>それぞれ成功するか、エラーになるなら何文字目かを先に考えます。成功・失敗だけでなく、どの処理に責任があるかも説明してみてください。</p>
+      <details><summary>実行後に開く</summary><p><code>9 +</code> は数・＋・終了になり、終了状態は０です。右側の数がないことは構文解析で検出します。<code>9 @ 3</code> は位置２の <code>@</code> を扱えないため失敗し、終了状態は１です。標準出力へは何も表示せず、エラーを標準エラー出力へ出します。</p></details>
+      <h3>実験４：扱える記号を一つ増やす</h3>
+      <p>マック側の別ターミナルで、次のファイルを編集します。コンテナと同じファイルを共有しています。</p>
+      <pre><code>nvim /Users/hatasatoki/Develops/compilerbook/textbook/new/labs/ch03/tokenize.c</code></pre>
+      <p><code>strchr("+-*/()", source[pos])</code> の一覧へ <code>%</code> を追加し、<code>strchr("+-*/()%", source[pos])</code> にします。ここで増やすのは文字の認識だけです。変更後、コンテナ内で再ビルドして実行します。</p>
+      <pre><code>gcc -std=c11 -Wall -Wextra -o /tmp/ch03-tokenize tokenize.c
+/tmp/ch03-tokenize '9 % 4'</code></pre>
+      <p>どのような出力になるか予想してください。この変更だけで、余りの計算までできるようになったでしょうか。</p>
+      <details><summary>変更後に開く</summary><p>数９、記号％、数４、終了が表示されます。％を記号として認識できるようになっただけで、計算はしていません。余りを求める意味の扱いと命令生成は、別途必要です。確認後は記号の一覧を元に戻し、再ビルドしてください。</p></details>
+      <p class="note">この章の区切りは、読み取り位置の変化からトークン列を予想でき、文字として認識できることと式として正しいことを分けて説明できたときです。</p>
+    </section>
+    <section id="check" aria-labelledby="check-title">
+      <h2 id="check-title"><span class="number">４</span>理解チェック</h2>
+      <h3><code>007-2</code> の最初のトークンの値と長さは？</h3>
+      <details><summary>解説を読む</summary><p>値は７、長さは３です。数値としての意味と、元のソースで占める範囲は別に保持します。次の－の開始位置は３です。</p></details>
+      <h3><code>-12</code> は、一つの負の数トークンになるか？</h3>
+      <details><summary>解説を読む</summary><p>今回の規則では、記号－、数１２、終了の三つです。－が数を負にする操作か、二つの式の引き算かは、並びを読む次の段階で判断します。</p></details>
+      <h3>数字の読み取りを <code>while</code> から一回だけの処理へ変えたら？</h3>
+      <details><summary>解説を読む</summary><p>１２を読んでも、一文字目の１だけでトークンを作ってしまいます。次の繰り返しで２を別のトークンにするため、複数桁の数をまとめられなくなります。</p></details>
+      <h3>空の入力と、空白２文字の入力はどう違う？</h3>
+      <details><summary>解説を読む</summary><p>どちらも終了トークンだけになりますが、その位置はそれぞれ０と２です。字句解析は成功します。式として材料が足りるかどうかは、構文解析で確かめます。</p></details>
+      <h3>入力 <code>2+3*4</code> を字句解析すれば、優先順位は決まるか？</h3>
+      <details><summary>解説を読む</summary><p>決まりません。ここで得るのは数２、＋、数３、＊、数４、終了という並びです。この並びから「３と４の積を２に足す」という構造を作るのが、次章の構文解析です。</p></details>
+      <div class="sources"><h3>参照先</h3><p><a href="https://www.sigbus.info/compilerbook">原書「低レイヤを知りたい人のためのＣコンパイラ作成入門」</a>のトークナイザ導入に対応します。本章では字句解析単体を観察するため、配列に保存したトークンを表示する実装にしています。</p><p>検証状況：教材のリナックス環境で、警告をエラーとして扱う設定でビルドし、複数桁の数・空白・記号・終了位置を確認しました。空入力や式として未完成の入力の受理、不明な文字・範囲外の整数・引数不足の拒否も確認しています。</p></div>
+    </section>
+    <footer><nav class="chapter-navigation" aria-label="前後の章">
+      <a class="chapter-prev" href="minimal-compiler.html" rel="prev">第２章　最小のコンパイラ</a>
+      <div class="chapter-next chapter-pending">第４章　構文解析（作成予定）</div>
+    </nav></footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="小さなアセンブリプログラムで、命令による状態の変化と機械語との対応を確かめる。">
+  <title>第１章　機械語とアセンブラ｜実験で理解するコンパイラ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">本文へ移動</a>
+  <details class="sidebar">
+    <summary>目次</summary>
+    <aside>
+    <p class="brand">実験で理解する<br>コンパイラ</p>
+    <p class="edition">新しい教科書</p>
+    <nav aria-label="本の目次">
+      <a href="contents.html">目次　全体の章立て</a>
+      <a href="index.html">序章　本の構成</a>
+      <a href="machine-code.html" aria-current="page">第１章　機械語とアセンブラ</a>
+      <a href="minimal-compiler.html">第２章　最小のコンパイラ</a>
+      <a href="tokenization.html">第３章　字句解析</a>
+    </nav>
+    <nav class="contents" aria-label="この章の目次">
+      <a href="#question">１　この章で扱う問い</a>
+      <a href="#theory">２　この章の理論</a>
+      <a href="#hands-on">３　ハンズオン</a>
+      <a href="#check">４　理解チェック</a>
+    </nav>
+    <a class="previous" href="../index.html">以前の教科書を読む</a>
+    </aside>
+  </details>
+  <main id="main">
+    <header>
+      <p class="eyebrow">第１章</p>
+      <h1>機械語とアセンブラ</h1>
+      <p class="lead">一つの命令が、値をどう変えるか。その積み重ねから、プログラムの動きを理解する。</p>
+      <p>これから作るコンパイラは、まずアセンブリ言語を出力するものにします。その出力が何を意味するのかを知るため、この章では自分で短いアセンブリコードを読み、変更し、実行結果を確かめます。</p>
+    </header>
+    <section id="question" aria-labelledby="question-title">
+      <h2 id="question-title"><span class="number">１</span>この章で扱う問い</h2>
+      <p><strong>コンパイラが出力するコードは、どう実行され、計算結果を生むのか？</strong></p>
+      <p>この問いを、「命令がどこにあり、何を変え、結果をどう受け渡すか」に分けて考えます。最後には、短い命令列から結果を予想し、命令を一つ変更すると結果が変わる理由を説明できることを目指します。</p>
+      <p>対象は、リポジトリの開発環境と同じ、リナックス上の６４ビットのエックス８６系ＣＰＵです。アセンブリの命令や関数の呼び出し方は、ＣＰＵや基本ソフトによって異なります。ここで確かめた具体的な書き方を、すべてのコンピュータにそのまま適用することはできません。</p>
+    </section>
+    <section id="theory" aria-labelledby="theory-title">
+      <h2 id="theory-title"><span class="number">２</span>この章の理論</h2>
+      <h3>命令は「状態をどう変えるか」を指定する</h3>
+      <p>計算の途中の値を保持する場所がなければ、次の計算にその値を使えません。ＣＰＵ内部には、値を保持する小さな記憶場所である<strong>レジスタ</strong>があります。本章では、そのうちの <code>rax</code> と <code>rcx</code> を使います。どちらも６４ビットの値を保持できます。</p>
+      <p>ＣＰＵは、メモリ上に置かれた命令を読み、その命令で指定された操作を行います。操作の結果として、レジスタやメモリの内容、次に実行する命令の位置などが変化します。この「ある時点で何がどの値になっているか」を、ここでは<strong>状態</strong>と呼びます。</p>
+      <p>メモリには場所を識別する番号である<strong>アドレス</strong>があり、命令もデータもバイト列として置かれます。１バイトは８ビットです。命令の位置を扱う <code>rip</code> というレジスタもありますが、今回は自分で操作しません。分岐のない今回の計算部分は、上から順に命令をたどれば理解できます。実際のＣＰＵ内部の並列処理やキャッシュは、この章では扱いません。</p>
+      <div class="table-scroll"><table>
+        <caption>今回区別したい３つのもの</caption>
+        <thead><tr><th>対象</th><th>役割</th><th>混同しないこと</th></tr></thead>
+        <tbody>
+          <tr><td>レジスタ</td><td>ＣＰＵ内部で値を保持する。</td><td><code>rax</code> は記憶場所の名前であり、その時点の値そのものではない。</td></tr>
+          <tr><td>メモリ</td><td>命令やデータを置く。</td><td>アドレスは場所、その場所のバイト列は中身。</td></tr>
+          <tr><td>命令</td><td>値のコピーや加算などの操作を指定する。</td><td>命令を表す文字列と、ＣＰＵが読む機械語は別の表現。</td></tr>
+        </tbody>
+      </table></div>
+      <h3>アセンブリ言語と機械語の関係</h3>
+      <p><code>mov rax, 7</code> は、人間が読める形で命令を記述した<strong>アセンブリ言語</strong>です。ＣＰＵがこの文字列を直接読んでいるわけではありません。<strong>アセンブラ</strong>というプログラムが、命令の規則に従って機械語のバイト列に変換します。</p>
+      <p>本書でまず作るコンパイラは、このアセンブリ言語までを出力します。その後、既存の道具で機械語への変換と、実行に必要な部品の結合を行います。後者を<strong>リンク</strong>と呼びます。コンパイラが直接機械語を作る設計もありますが、本書では工程を分けることで、生成した命令を目で確認できます。</p>
+      <ol>
+        <li>ソースコードから、コンパイラがアセンブリコードを生成する。</li>
+        <li>アセンブラが機械語を含むオブジェクトファイルを作る。</li>
+        <li>リンカが必要な部品を結合し、実行ファイルを作る。</li>
+        <li>起動の仕組みが実行の準備を整え、ＣＰＵが命令を実行する。</li>
+      </ol>
+      <figure class="concept-figure">
+        <figcaption><strong>図１　ソースコードが実行されるまで</strong><span>上から下へ、各道具が何を受け取り、何を作るかを追います。</span></figcaption>
+        <div class="translation-flow">
+          <div class="flow-stage">ソースコード<small>計算したい内容を書く</small></div>
+          <div class="flow-arrow">↓ <span>コンパイラが変換</span></div>
+          <div class="flow-stage focus-stage">アセンブリコード<small>今回はここを手で用意する</small><code>mov rax, 7</code></div>
+          <div class="flow-arrow">↓ <span>アセンブラが変換</span></div>
+          <div class="flow-stage">オブジェクトファイル<small>機械語と、結合に必要な情報を含む</small></div>
+          <div class="flow-arrow">↓ <span>リンカが起動用コードなどと結合</span></div>
+          <div class="flow-stage">実行ファイル<small>実行に必要な情報をまとめたファイル</small></div>
+          <div class="flow-arrow">↓ <span>起動の仕組みがメモリ上に準備</span></div>
+          <div class="flow-stage">ＣＰＵが命令を実行<small>レジスタなどの状態が変わる</small></div>
+        </div>
+        <p class="figure-takeaway">アセンブラが作るのは、まだ結合前の部品です。機械語に変換する段階と、実行ファイルを作る段階を分けて見ます。</p>
+      </figure>
+      <p>この章では、１の出力に相当するコードを手で用意します。実行ファイルには自分の命令以外の情報や起動用のコードも含まれます。「アセンブリの文字列を、そのまま実行可能なファイルに保存しただけ」ではない点を押さえてください。</p>
+      <h3>３つの命令で値の変化を読む</h3>
+      <p>ここではインテル形式という記法を使います。以下の命令では、左側が書き換える対象、右側が使う値です。数値を直接書いた <code>7</code> のような値は<strong>即値</strong>と呼びます。</p>
+      <div class="table-scroll"><table>
+        <thead><tr><th>命令</th><th>実行すること</th></tr></thead>
+        <tbody>
+          <tr><td><code>mov rax, 7</code></td><td><code>rax</code> の値を７にする。それ以前の値は上書きされる。</td></tr>
+          <tr><td><code>add rax, 5</code></td><td>現在の <code>rax</code> の値に５を加え、その結果を <code>rax</code> に入れる。</td></tr>
+          <tr><td><code>sub rax, 3</code></td><td>現在の <code>rax</code> の値から３を引き、その結果を <code>rax</code> に入れる。</td></tr>
+        </tbody>
+      </table></div>
+      <p><code>mov rcx, rax</code> と書けば、その瞬間の <code>rax</code> の値を <code>rcx</code> にコピーします。２つのレジスタが同じ記憶場所になるわけではありません。その後で <code>rax</code> を変えても、コピー済みの <code>rcx</code> は自動では変わりません。</p>
+      <figure class="concept-figure">
+        <figcaption><strong>図２　コピーするのは、その瞬間の値</strong><span>各段の箱は、命令を実行した直後のレジスタです。７を入れたところから追います。</span></figcaption>
+        <div class="register-sequence">
+          <div class="register-step"><p>① <code>mov rax, 7</code> の直後</p><div class="register-pair"><div class="register-box"><code>rax</code><strong>７</strong><small>７を入れた</small></div><div class="register-box"><code>rcx</code><strong>？</strong><small>まだ値を設定していない</small></div></div></div>
+          <p class="state-arrow">↓ <code>mov rcx, rax</code>：７をコピー</p>
+          <div class="register-step"><p>② コピーした直後</p><div class="register-pair"><div class="register-box"><code>rax</code><strong>７</strong><small>コピー元は変わらない</small></div><div class="register-box changed"><code>rcx</code><strong>７</strong><small>変化：７を受け取った</small></div></div></div>
+          <p class="state-arrow">↓ <code>add rax, 5</code>：コピー元に５を加算</p>
+          <div class="register-step"><p>③ 加算した直後</p><div class="register-pair"><div class="register-box changed"><code>rax</code><strong>１２</strong><small>変化：７＋５</small></div><div class="register-box"><code>rcx</code><strong>７</strong><small>変わらない</small></div></div></div>
+        </div>
+        <p class="figure-takeaway">同じ値が入っていても、２つは別の記憶場所です。コピーした後の変更は、自動では伝わりません。「？」は０という意味ではありません。</p>
+      </figure>
+      <p>なお、加減算は条件判定に使うフラグも変更します。この章の命令列はフラグを利用しないため、観察する状態をレジスタの値に絞っています。</p>
+      <h3>結果を計算することと、結果を返すこと</h3>
+      <p>関数の呼び出し元が結果を受け取るには、結果をどこに置くかの取り決めが必要です。今回の環境では、整数を返す関数は <code>rax</code> 系のレジスタを使います。ここで、６４ビット全体を指す <code>rax</code> と、その一部分を指す <code>eax</code> の関係を押さえます。</p>
+      <p><strong><code>eax</code> は、<code>rax</code> の下位３２ビットを指す名前です。</strong>別々の記憶場所ではありません。２進数を通常のように左から上位の桁、右へ下位の桁と並べると、右側の３２桁が <code>eax</code> に当たります。</p>
+      <figure class="concept-figure">
+        <figcaption><strong>同じレジスタの、どこまでを見るか</strong><span>外側の枠全体が <code>rax</code>、右半分が <code>eax</code> です。</span></figcaption>
+        <div class="register-width">
+          <div class="register-width-label"><code>rax</code>：全体で６４ビット</div>
+          <div class="register-halves">
+            <div>上位３２ビット<small>９を入れたとき：すべて０</small></div>
+            <div class="register-low">下位３２ビット ＝ <code>eax</code><small>９を入れたとき：９を表すビット列</small></div>
+          </div>
+        </div>
+      </figure>
+      <p>今回の環境のＣの <code>int</code> は３２ビットです。そのため、<code>int</code> を返す <code>main</code> の呼び出し元は、<code>eax</code> の部分を返り値として読みます。<code>rax</code> から別の場所へコピーして受け取る、という意味ではありません。</p>
+      <p>たとえば <code>mov rax, 9</code> で９を入れると、上位３２ビットはすべて０になり、下位３２ビットが９を表します。全体を読んでも、<code>eax</code> の部分だけを読んでも値は９です。本章で扱う小さな正の整数では、このように読む幅の違いが値の違いにならないため、<code>rax</code> に置いた値をそのまま返り値として考えられます。</p>
+      <p>値を用意してから呼び出し元へ戻るところを、短い例で見てみます。次は、９を返す <code>main</code> の本体部分です。実行ファイルを作るための指定は省略しています。</p>
+      <pre><code>main:
+    mov rax, 9
+    ret</code></pre>
+      <p><code>main:</code> は、この関数の開始位置に付けた名前です。そこから実行が始まると、<code>mov rax, 9</code> が返す値の９を用意し、続く <code>ret</code> が呼び出し元へ実行を戻します。</p>
+      <p><strong><code>ret</code> は、今の関数の実行を終え、呼び出した側の「続き」へ戻る命令です。</strong>関数を呼び出す <code>call</code> 命令を実行すると、ＣＰＵは「呼び出しが終わったら再開する場所」を保存してから、呼び出す関数へ実行を移します。この保存された場所を<strong>戻りアドレス</strong>と呼びます。<code>ret</code> はそのアドレスを取り出し、そこから命令の実行を再開します。</p>
+      <p>戻りアドレスは、メモリ上の<strong>スタック</strong>という領域に保存されます。スタックの詳しい仕組みは後の章で扱います。ここでは、呼び出すときに戻り先を保存するので、関数側は呼び出し元の場所を固定して書かなくても戻れる、と押さえてください。</p>
+      <figure class="concept-figure">
+        <figcaption><strong>呼び出した場所の「次」へ戻る</strong><span>①で戻り先Ｂを保存し、②で右の関数へ移ります。③の計算後、④で左のＢへ戻ります。</span></figcaption>
+        <div class="call-return-diagram">
+          <svg viewBox="0 0 760 450" role="img" aria-labelledby="call-return-title call-return-desc" xmlns="http://www.w3.org/2000/svg">
+            <title id="call-return-title">呼び出し元と関数を往復する実行の流れ</title>
+            <desc id="call-return-desc">呼び出し元のＡにあるcall mainは、次の命令の位置Ｂをスタックに保存してmainへ移る。mainはmov rax, 9で値を用意する。retは保存されたＢを取り出して、呼び出し元のＢから実行を再開する。Ｂは説明用の位置の名前で、返り値９とは異なる。</desc>
+            <defs>
+              <marker id="call-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#355d4c"/></marker>
+              <marker id="return-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#a3452c"/></marker>
+            </defs>
+            <rect x="10" y="12" width="265" height="260" rx="6" fill="#f8f6f0" stroke="#aab9ac"/>
+            <rect x="485" y="12" width="265" height="260" rx="6" fill="#f8f6f0" stroke="#aab9ac"/>
+            <text x="28" y="43" font-weight="bold">呼び出し元：起動用コード</text>
+            <text x="503" y="43" font-weight="bold">呼び出される関数</text>
+            <rect x="25" y="70" width="235" height="48" rx="4" fill="#e9eee5"/>
+            <text x="38" y="100" class="diagram-code">Ａ：call main</text>
+            <text x="505" y="100" class="diagram-code">main:</text>
+            <path d="M270 94H490" stroke="#355d4c" stroke-width="2.5" fill="none" marker-end="url(#call-arrow)"/>
+            <text x="380" y="76" text-anchor="middle">② 関数へ移る</text>
+            <path d="M620 115V140" stroke="#355d4c" stroke-width="2" marker-end="url(#call-arrow)"/>
+            <text x="505" y="164" class="diagram-code">mov rax, 9</text>
+            <text x="505" y="188" class="diagram-small">③ 返り値９を用意する</text>
+            <path d="M620 197V216" stroke="#355d4c" stroke-width="2" marker-end="url(#call-arrow)"/>
+            <text x="505" y="244" class="diagram-code">ret</text>
+            <rect x="25" y="207" width="235" height="49" rx="4" fill="#f5e8df" stroke="#a3452c"/>
+            <text x="38" y="237" font-weight="bold">Ｂ：呼び出しの次の命令</text>
+            <path d="M495 233H268" stroke="#a3452c" stroke-width="2.5" fill="none" marker-end="url(#return-arrow)"/>
+            <text x="380" y="215" text-anchor="middle" fill="#a3452c">④ Ｂへ戻る</text>
+            <text x="32" y="155" class="diagram-small">Ａを実行したときに、</text>
+            <text x="32" y="178" class="diagram-small">次の位置Ｂを保存しておく。</text>
+            <rect x="230" y="330" width="300" height="76" rx="5" fill="#fffef9" stroke="#a3452c"/>
+            <text x="380" y="357" text-anchor="middle">スタック（メモリ上）</text>
+            <text x="380" y="387" text-anchor="middle" font-weight="bold">保存した戻りアドレス：Ｂ</text>
+            <path d="M85 272V368H220" stroke="#355d4c" stroke-width="2" stroke-dasharray="6 4" fill="none" marker-end="url(#call-arrow)"/>
+            <text x="98" y="317" class="diagram-small">① Ｂを保存</text>
+            <path d="M540 368H685V278" stroke="#a3452c" stroke-width="2" stroke-dasharray="6 4" fill="none" marker-end="url(#return-arrow)"/>
+            <text x="554" y="317" class="diagram-small">④ Ｂを取り出す</text>
+            <text x="380" y="438" text-anchor="middle" class="diagram-small">実線：実行の移動　／　破線：戻りアドレスの保存・取り出し</text>
+          </svg>
+        </div>
+        <p class="figure-takeaway">戻る先は <code>call</code> 自身ではなく、その次の命令です。Ａ・Ｂは説明用に付けた位置の名前で、Ｂは返り値の９とは別の情報です。</p>
+      </figure>
+      <p>今回の例では、次の順序で処理が進みます。</p>
+      <ol>
+        <li>起動用のコードが <code>main</code> を呼び出す。その際、呼び出し命令の次の位置が戻りアドレスとして保存される。</li>
+        <li><code>main</code> の <code>mov rax, 9</code> が、返す値の９を用意する。</li>
+        <li><code>ret</code> が保存された戻りアドレスを使い、起動用のコードの続きへ実行を戻す。</li>
+        <li>起動用のコードが返り値の９を受け取り、プログラムの終了処理を進める。</li>
+      </ol>
+      <p><strong><code>mov</code> が「返す値」を用意し、<code>ret</code> が「実行する場所」を戻します。</strong>返り値と戻りアドレスは別のものです。この例では返り値は９ですが、戻りアドレスは起動用のコードの続きを指す場所です。</p>
+      <p>終了処理を経て、返した値がプログラムの終了状態として伝わります。シェルの <code>$?</code> は直前のコマンドの終了状態です。通常、０は成功、０以外は失敗などを表すために使いますが、この実験では計算結果を見る窓として利用します。</p>
+      <p class="note">終了状態で観察できる値は０から２５５までです。大きな整数の結果をすべて観察できるわけではありません。また、最終結果だけでは途中の状態までは確定しません。同じ結果になる異なる命令列もあります。</p>
+    </section>
+    <section id="hands-on" aria-labelledby="hands-on-title">
+      <h2 id="hands-on-title"><span class="number">３</span>ハンズオン</h2>
+      <p>短い命令列について、紙やメモ上で値の変化を予想し、実行結果と照合します。その後、一つの命令を変え、さらにレジスタ間のコピーを試します。最後に、書いた命令が機械語のバイト列になっていることを確認します。</p>
+      <h3>準備：実行する環境をそろえる</h3>
+      <p>このリポジトリには、対象のリナックス環境を用意する <code>Dockerfile</code> と <code>docker.mk</code> があります。マック本体のコンパイラでは環境が異なるため、以下ではコンテナ内の <code>gcc</code> と <code>objdump</code> を使います。まず、利用中のコンテナ実行アプリを起動してください。</p>
+      <p>マック側のターミナルで、リポジトリのルートから次を実行します。初回のイメージ作成にはネットワーク接続が必要です。すでにイメージを作成済みなら、最初のビルドは省略できます。</p>
+      <pre><code>cd /Users/hatasatoki/Develops/compilerbook
+make -f docker.mk image
+make -f docker.mk shell</code></pre>
+      <p><code>image</code> は道具を含む環境を作り、<code>shell</code> はその環境内のシェルを開きます。リポジトリはコンテナ内の <code>/workspace</code> で参照できます。以下のコマンドは、特記がない限りこのコンテナ内で実行します。</p>
+      <pre><code>uname -m
+cd /workspace/textbook/new/labs/ch01</code></pre>
+      <p><code>uname -m</code> が <code>x86_64</code> と表示されることを確認します。接続エラーが出る場合はコンテナ実行アプリの起動状態を確認してください。命令を受け付けない場合は、マック側のターミナルで実行していないか、対象の環境で動いているかを確かめます。</p>
+      <h3>実験１：計算結果を予想して実行する</h3>
+      <p><a href="labs/ch01/arithmetic.s">用意した計算用ファイル</a>は次の内容です。マック側のエディタで同じファイルを開いて編集できます。命令以外の行にも役割があるため、まず全体を見てください。</p>
+      <pre><code>.intel_syntax noprefix
+.text
+.globl main
+main:
+    mov rax, 7
+    add rax, 5
+    sub rax, 3
+    ret
+.section .note.GNU-stack,"",@progbits</code></pre>
+      <p><code>.intel_syntax noprefix</code> はアセンブラへの記法の指定です。<code>.text</code> は命令を置く領域を選び、<code>.globl main</code> は <code>main</code> を別の部品から参照できる名前にします。<code>main:</code> はその位置に付けたラベルです。これらはＣＰＵが順番に実行する計算命令ではありません。</p>
+      <p>最後の <code>.note.GNU-stack</code> の指定は、実行可能なスタックを必要としないことをツールに伝えるための情報です。今は計算には関与しない付帯情報として扱い、残してください。</p>
+      <p><strong>実行する前に：</strong>３つの計算命令の直後に、<code>rax</code> がそれぞれいくつになるか書いてください。初期値は０だと仮定せず、最初の命令で何が確定するかを考えます。</p>
+      <pre><code>gcc -o /tmp/compilerbook-ch01-arithmetic arithmetic.s
+/tmp/compilerbook-ch01-arithmetic
+echo $?</code></pre>
+      <p><code>gcc</code> はここでは道具の呼び出し役です。拡張子が <code>.s</code> なのでアセンブラに渡し、その後リンクして、<code>-o</code> で指定した実行ファイルを作ります。生成に成功したことを確認してから実行してください。失敗したのに実行すると、以前作ったファイルの結果を見てしまうことがあります。</p>
+      <p><code>echo $?</code> はプログラムの直後に実行します。間に別のコマンドを挟むと、そのコマンドの終了状態へ変わります。実行ファイル自身は文字を出力しないため、何も表示されずに終了しても正常です。</p>
+      <details><summary>実行後に開く：結果と途中状態</summary>
+        <p>終了状態は９です。最初の命令で７が入り、次に１２、次に９になります。最後に <code>ret</code> で呼び出し元へ戻ります。</p>
+        <div class="table-scroll"><table><thead><tr><th>実行済みの命令</th><th>直後の値</th></tr></thead><tbody><tr><td><code>mov rax, 7</code></td><td>７</td></tr><tr><td><code>add rax, 5</code></td><td>１２</td></tr><tr><td><code>sub rax, 3</code></td><td>９</td></tr></tbody></table></div>
+        <p>この表は命令の意味から導いた途中状態です。今回、実行によって直接観察したのは最後の終了状態です。この２つは区別しておきます。</p>
+      </details>
+      <h3>実験２：加算を、上書きに変える</h3>
+      <p><code>arithmetic.s</code> の <code>add rax, 5</code> だけを <code>mov rax, 5</code> に変更します。結果を予想してから、実験１の３つのコマンドを再実行してください。編集後は必ず再ビルドします。ソースを保存しただけでは、前の実行ファイルは変わりません。</p>
+      <details><summary>変更後に開く：どの情報が失われたか</summary>
+        <p>結果は２です。７を入れた後に５で上書きし、その５から３を引きます。加算と異なり、２番目の命令は以前の値を使いません。この命令列では最初の７を別の値に変えても、２番目の命令で５に上書きされるため、最終結果は変わりません。</p>
+        <p>ここまで読んだら、最初の７を１０に変えて再ビルドし、本当に同じ結果になるか試してください。「どこまでの変更が結果に影響するか」も、命令列から読み取れます。実験後は元の７と <code>add</code> に戻しておきます。</p>
+      </details>
+      <h3>実験３：コピーした値は、元の値に追従するか</h3>
+      <p>次は<a href="labs/ch01/copy.s">コピー用ファイル</a>を使います。指定やラベルは実験１と同じで、計算部分が次のようになっています。</p>
+      <pre><code>    mov rax, 7
+    mov rcx, rax
+    add rax, 5
+    sub rcx, 3
+    mov rax, rcx
+    ret</code></pre>
+      <p>２列のメモを作り、各命令の直後の <code>rax</code> と <code>rcx</code> を追ってください。まだ値を設定していない場所は「未設定」と書きます。特に、３番目の命令で <code>rcx</code> も変わるかどうかを予想してから実行します。</p>
+      <pre><code>gcc -o /tmp/compilerbook-ch01-copy copy.s
+/tmp/compilerbook-ch01-copy
+echo $?</code></pre>
+      <details><summary>実行後に開く：２つの値を分けて追う</summary>
+        <p>結果は４です。コピー直後は両方７ですが、加算後は <code>rax</code> だけ１２になります。<code>rcx</code> は７のままなので、そこから３を引いて４になります。最後にその４を <code>rax</code> へコピーして返します。</p>
+        <p>最後の <code>mov rax, rcx</code> を除くと、返す値は１２になります。<code>rcx</code> に計算結果があっても、呼び出し元が結果を読む場所に置かなければ、その値は返りません。予想をメモしてから、その一行を外して再ビルドし、確かめてください。</p>
+      </details>
+      <h3>実験４：書いた命令と機械語を対応させる</h3>
+      <p>元に戻した <code>arithmetic.s</code> から、リンク前のオブジェクトファイルを作ります。<code>-c</code> はリンク前で止める指定です。今回は自分の命令だけを見やすくするため、この段階で観察します。</p>
+      <pre><code>gcc -c -o /tmp/compilerbook-ch01-arithmetic.o arithmetic.s
+objdump -d -M intel /tmp/compilerbook-ch01-arithmetic.o</code></pre>
+      <p><code>objdump</code> はファイルの内容を調べる道具です。<code>-d</code> は機械語から読みやすい命令表記を得る逆アセンブル、<code>-M intel</code> は表示形式の指定です。結果の <code>&lt;main&gt;:</code> 以下に、位置、機械語のバイト列、命令が並びます。</p>
+      <p>中央の２桁ずつの１６進数は、それぞれ１バイトを表します。右側の命令と対応させ、<code>mov</code>、<code>add</code>、<code>sub</code>、<code>ret</code> を探してください。即値の７が <code>0x7</code> のように表示されても、表記が違うだけで同じ値です。</p>
+      <p><strong>観察すること：</strong>各命令は何バイトあるでしょうか。隣の命令の位置との差と一致するでしょうか。ここに表示される位置は、リンク前の命令領域内での相対的な位置であり、実行時の最終的なアドレスではありません。</p>
+      <details><summary>観察後に開く：１行と１バイトは同じではない</summary>
+        <p>今回の環境の一般的な出力では、最初の命令は <code>48 c7 c0 07 00 00 00</code> の７バイト、続く加算と減算は各４バイト、<code>ret</code> は <code>c3</code> の１バイトです。命令の開始位置は１６進数で <code>0</code>、<code>7</code>、<code>b</code>、<code>f</code> となります。</p>
+        <p>機械語の命令の長さは一定ではありません。ＣＰＵは改行を探して命令を区切るのではなく、命令の形式に従って読み解きます。また、同じ操作を表す符号化が複数ある場合もあるため、道具が変わると同じ意味でもバイト列が変わることがあります。</p>
+      </details>
+      <h3 id="stack-observation">実験５：スタック上の戻りアドレスを見る</h3>
+      <p>今度は、実行を途中で止めて、メモリに保存されている戻りアドレスを直接見ます。その後、<code>ret</code> を１命令だけ実行し、保存されていた場所へ本当に戻ったかを確かめます。実行を止めたり、メモリを調べたりする道具を<strong>デバッガ</strong>と呼びます。ここでは、教材のコンテナに入っている <code>gdb</code> を使います。</p>
+      <p>この実験は、<code>arithmetic.s</code> の計算部分を元の <code>mov rax, 7</code>、<code>add rax, 5</code>、<code>sub rax, 3</code>、<code>ret</code> の４命令に戻してから行います。命令の追加や並べ替えをしていると、以下の「３命令進める」で止まる場所が変わります。</p>
+      <h4>① デバッガを起動し、関数の入り口で止める</h4>
+      <p>今回のマックとコンテナの組み合わせでは、ＧＤＢから直接起動すると、変換実行中のレジスタを取得できませんでした。そこで、<strong>ＱＥＭＵが教材プログラムを実行し、ＧＤＢはＱＥＭＵのデバッグ窓口へ接続する</strong>方法を使います。以下は、この環境で関数の入り口への停止とスタックの読み取りまで確認できた手順です。</p>
+      <p>まず、コンテナ内に追加の道具を入れます。インストールが成功して、バージョンが表示されてから先へ進んでください。</p>
+      <pre><code>sudo apt-get update
+sudo apt-get install -y qemu-user
+qemu-x86_64 --version</code></pre>
+      <p>今回の環境では <code>qemu-user</code> を使い、実行コマンドは <code>qemu-x86_64</code> です。古い案内にある <code>qemu-user-static</code> と <code>qemu-x86_64-static</code> は、この環境では使いません。コンテナを削除して作り直した場合、追加インストールもやり直す必要があります。</p>
+      <p>まず、コンテナ内のシェルで次を実行します。<code>-g</code> はデバッグ用の情報を付ける指定、<code>-no-pie</code> は今回の観察で実行ファイルのコードの位置を扱いやすくする指定です。スタックや共有ライブラリのアドレスまで固定するものではありません。</p>
+      <pre><code>cd /workspace/textbook/new/labs/ch01
+gcc -g -no-pie -o /tmp/compilerbook-ch01-stack arithmetic.s
+qemu-x86_64 -g 1234 /tmp/compilerbook-ch01-stack &amp;
+gdb -q /tmp/compilerbook-ch01-stack</code></pre>
+      <p>ＱＥＭＵの <code>-g 1234</code> は、１２３４番のポートでデバッガの接続を待つ指定です。末尾の <code>&amp;</code> はバックグラウンドで動かし、同じターミナルから次のコマンドを入力できるようにします。ここでの <code>-g</code> は、先ほどの <code>gcc</code> のデバッグ情報の指定とは別の意味です。</p>
+      <p><code>(gdb)</code> と表示されたら、以降はシェルではなくデバッガに指示を出しています。次の行を順番に入力してください。<code>(gdb)</code> という文字自体は入力しません。</p>
+      <pre><code>set disassembly-flavor intel
+target remote localhost:1234
+break *main
+continue
+x/i $rip</code></pre>
+      <p>最初の行は命令表示を教材と同じインテル形式にそろえます。２行目は同じコンテナ内のＱＥＭＵへ接続します。接続直後は、<code>main</code> より前の起動処理で止まっていることがあります。<code>break *main</code> で <code>main</code> の最初の命令の位置に停止地点を置き、<code>continue</code> でそこまで進めます。今回はすでにＱＥＭＵがプログラムを起動しているので、<code>run</code> は使いません。</p>
+      <p>接続時にファイル転送が遅いという警告や、ライブラリのデバッグ情報がないという表示が出ても、続けて <code>main</code> に停止できれば今回の観察は進められます。</p>
+      <p><code>rip</code> は命令の位置を扱うレジスタです。停止中の <code>$rip</code> は、これから実行する命令のアドレスを表します。<code>x/i $rip</code> は、その場所の命令を１つ表示します。ここで <code>mov rax, 0x7</code> が見えることを確認します。</p>
+      <h4>② スタックに保存されている値を見る</h4>
+      <p><strong><code>rsp</code> はスタックの先頭のアドレスを保持するレジスタ</strong>です。この関数に入った直後は、そこに呼び出し元が保存した８バイトの戻りアドレスがあります。<code>rsp</code> の値と、その場所に入っている値を分けて見ます。</p>
+      <pre><code>info registers rsp rip
+x/gx $rsp</code></pre>
+      <p><code>info registers</code> は指定したレジスタを表示します。<code>x/gx $rsp</code> は、<code>rsp</code> が指すメモリを８バイト単位で１つ、１６進数で表示します。<code>g</code> が８バイト、後ろの <code>x</code> が１６進数の指定です。</p>
+      <pre><code>0x7ffffeb894f8:  0x00007ffffe0c9601</code></pre>
+      <p>上は今回実際に観察した出力です。左側の <code>0x7ffffeb894f8</code> は<strong>保存している場所</strong>で、<code>rsp</code> の値と一致します。右側の <code>0x00007ffffe0c9601</code> は<strong>そこに保存されている戻りアドレス</strong>です。図のＢに相当するのは右側です。実際の数字は環境や実行ごとに変わるので、例と一致させる必要はありません。</p>
+      <p>コマンドは１行ずつ入力します。<code>x/gx $rsp</code> の後に余分な改行や <code>-</code> が混ざると、式の構文エラーになります。この場合は余分な文字を除き、その１行を入力し直してください。</p>
+      <p>比較のため、この２つをデバッガ内のメモ用変数に保存します。プログラムのレジスタやメモリを書き換える操作ではありません。</p>
+      <pre><code>set $saved_rsp = $rsp
+set $saved_return = *(unsigned long long *)$rsp
+x/i $saved_return</code></pre>
+      <p><code>$saved_rsp</code> は現在のスタックの位置、<code>$saved_return</code> はそこから読んだ戻りアドレスです。２行目の式は、この環境で「<code>rsp</code> の場所から８バイトの整数を読む」という意味です。最後の行では、保存された戻り先にある命令を表示します。自分で書いた <code>main</code> の外の命令が見えますが、今はその命令自体の意味を理解する必要はありません。</p>
+      <h4>③ 計算を進めて、戻る直前を観察する</h4>
+      <pre><code>stepi 3
+x/i $rip
+print /d $rax
+x/gx $rsp</code></pre>
+      <p><code>stepi 3</code> は機械語の命令を３つ実行して停止します。元の教材コードなら、次の命令は <code>ret</code>、<code>rax</code> の値は９です。<code>print /d</code> は値を１０進数で表示する指定です。この３つの計算命令はスタックを変更しないため、スタック先頭の戻りアドレスも先ほどと同じです。</p>
+      <p><strong>進める前に予想：</strong><code>ret</code> の直後、<code>rip</code> はどの値になるでしょうか。８バイトの戻りアドレスを取り出した後、<code>rsp</code> はどう変わるでしょうか。</p>
+      <h4>④ 戻った場所を比較する</h4>
+      <p><code>x/i $rip</code> が <code>ret</code> を指していることを確認してから、次を入力します。</p>
+      <pre><code>stepi
+print /x $rip
+print /x $saved_return
+print $rip == $saved_return
+print /d $rsp - $saved_rsp
+x/i $rip</code></pre>
+      <details><summary>観察後に開く：保存された場所へ戻ったか</summary>
+        <p><code>$rip</code> と <code>$saved_return</code> は同じアドレスになります。一致を調べる式は、真を表す１を返します。また、<code>$rsp - $saved_rsp</code> は８です。今回の <code>ret</code> は、スタック先頭の８バイトを戻り先として使い、スタックの先頭を８バイト先へ進めます。</p>
+        <p>スタックから「取り出す」といっても、元のメモリを０で消すわけではありません。先頭を示す <code>rsp</code> が動き、取り出した場所が現在のスタックの範囲から外れます。ここでは、戻りアドレスが積まれた後の状態と、取り出す前後を観察しました。<code>call</code> が保存する瞬間そのものは、まだ観察していません。</p>
+      </details>
+      <p>確認できたら、<code>continue</code> で終了まで進め、<code>quit</code> でデバッガを閉じます。デバッガを終了した後のシェルの <code>$?</code> はデバッガ自身の終了状態なので、教材プログラムの結果と混同しないでください。</p>
+      <pre><code>continue
+quit</code></pre>
+      <details><summary>デバッガで停止できない場合</summary>
+        <p><code>Cannot PTRACE_GETREGS</code> や <code>Couldn't get registers</code> が出た場合は、以前の直接起動の手順を使っていないか確認します。今回の環境では、その方法は失敗し、ＱＥＭＵへ <code>target remote</code> で接続する方法で観察できました。直接起動中のＧＤＢは <code>quit</code> で終了し、確認が出たら応答してから、①の接続手順に進みます。</p>
+        <p>マック上で別のＣＰＵ向けのコンテナを動かしている場合、変換実行の仕組みがデバッグ操作に対応していないことがあります。また、コンテナの権限設定でプロセスの観察が制限される場合もあります。<code>ptrace</code> やレジスタ取得に関するエラーが出たら、表示を残して原因を確認します。コマンドの成功と停止位置を確認できるまでは、後続の観察を進めないでください。</p>
+        <p>この場合、プログラムの計算が間違っているとは限りません。権限の変更や別の実行環境が必要かは、エラー内容を確認してから判断します。この追加実験ができなくても、前の４つの実験は進められます。</p>
+      </details>
+      <p class="note">この追加実験の区切りは、保存されていた戻りアドレスと、<code>ret</code> 直後の命令の位置が一致することを確認できたときです。具体的なアドレスの数字を暗記する必要はありません。</p>
+      <p class="note">ここでの区切りは、命令の変更が結果に与える影響を説明でき、アセンブリの命令が機械語のバイト列へ変換されたことを確認できたときです。機械語の符号化を暗記する必要はありません。</p>
+    </section>
+    <section id="check" aria-labelledby="check-title">
+      <h2 id="check-title"><span class="number">４</span>理解チェック</h2>
+      <p>まず自分で答えを考え、その理由まで言葉にしてから解説を開いてください。</p>
+      <h3>問い１：まだ実行していない命令列を読む</h3>
+      <p>同じ環境で、次の計算部分を持つ <code>main</code> を動かすと、終了状態は何になりますか。２つのレジスタの変化を説明してください。</p>
+      <pre><code>mov rax, 9
+mov rcx, rax
+sub rax, 4
+add rcx, 2
+mov rax, rcx
+ret</code></pre>
+      <details><summary>解説を読む</summary><p>１１です。コピー直後は両方９、減算後は <code>rax</code> が５、加算後は <code>rcx</code> が１１です。最後に１１を <code>rax</code> に入れます。減算で作った５はそこで上書きされます。コピー先が独立していることと、返す場所の取り決めを使って説明できます。</p></details>
+      <h3>問い２：ソースを変えたのに結果が変わらない</h3>
+      <p>命令を変更して保存した後、前と同じ結果が表示されました。「理解している命令の意味が間違っている」と決める前に、何を確認しますか。</p>
+      <details><summary>解説を読む</summary><p>再ビルドしたか、そのビルドは成功したか、作ったファイルと実行したファイルが同じか、直後に終了状態を確認したかを調べます。そのうえで、変更した値が後の命令で上書きされていないかを追います。観察結果には、命令の意味だけでなく、どのファイルを実行したかも関わります。</p></details>
+      <h3>問い３：終了状態から、どこまでわかるか</h3>
+      <p>終了状態が９だったことだけから、「途中で必ず７と１２を経由した」と言えるでしょうか。</p>
+      <details><summary>解説を読む</summary><p>言えません。最初から９を入れて返す命令列でも同じ結果になります。途中状態についての説明は、実行した命令列とその意味に基づいています。途中の値を直接確認したいなら、その時点で停止してレジスタを調べるなど、追加の観察が必要です。</p></details>
+      <h3>問い４：最初の問いに戻る</h3>
+      <p>「コンパイラが出力するコードは、どう実行され、計算結果を生むのか」を、アセンブラ、機械語、レジスタ、呼び出し元という言葉を使って説明してください。</p>
+      <details><summary>説明の骨組みを読む</summary><p>今回の方式では、コンパイラが出力したアセンブリをアセンブラが機械語へ変換し、リンクを経て実行ファイルになります。実行時、ＣＰＵは機械語の命令に従ってレジスタなどの状態を変えます。関数は計算結果を決められた場所へ置いて呼び出し元へ戻ります。この章では、その結果を終了状態を通して観察しました。</p></details>
+      <p>説明に詰まったら、対応する理論や実験へ戻ります。そこで得た説明や区別を、この章の理論本文にも反映して育てていきます。</p>
+      <div class="sources">
+        <h3>参照先</h3>
+        <ul>
+          <li><a href="https://www.sigbus.info/compilerbook">原書「低レイヤを知りたい人のためのＣコンパイラ作成入門」</a>：機械語とアセンブラ、付録の命令一覧。</li>
+          <li><a href="https://sourceware.org/binutils/docs/as/i386_002dVariations.html">アセンブラの公式資料：記法の違い</a>：インテル形式と命令の引数の順序。</li>
+          <li><a href="https://gcc.gnu.org/onlinedocs/gcc/Overall-Options.html">コンパイラの公式資料：処理段階の指定</a>：入力形式、出力先、リンク前で止める指定。</li>
+          <li><a href="https://sourceware.org/binutils/docs/binutils/objdump.html">逆アセンブルの公式資料</a>：命令とバイト列の表示。</li>
+        </ul>
+        <p>実験５の操作は、<a href="https://sourceware.org/gdb/current/onlinedocs/gdb.html/Memory.html">デバッガの公式資料：メモリの観察</a>と、<a href="https://sourceware.org/gdb/current/onlinedocs/gdb.html/Continuing-and-Stepping.html">命令単位の実行</a>を参照しています。</p>
+        <p>ＱＥＭＵ経由の接続は、<a href="https://docs.orbstack.dev/machines/#debugging-with-gdb-lldb">実行環境の公式資料：デバッグ方法</a>を参照しています。パッケージ名は今回の環境で導入できた <code>qemu-user</code> に合わせています。</p>
+        <p>検証状況：掲載ファイルのアセンブルと逆アセンブルを確認。実験５では、利用者の実行結果から、ビルド、ＱＥＭＵへの接続、<code>main</code> の先頭での停止、スタック上の戻りアドレスの読み取りまで確認しました。<code>ret</code> 前後の比較はまだ未確認で、その結果は命令の意味から導いた予想です。</p>
+      </div>
+    </section>
+    <footer><nav class="chapter-navigation" aria-label="前後の章">
+      <a class="chapter-prev" href="index.html" rel="prev">序章　本の構成</a>
+      <a class="chapter-next" href="minimal-compiler.html" rel="next">第２章　最小のコンパイラ</a>
+    </nav></footer>
+  </main>
+</body>
+</html>

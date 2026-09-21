@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="数字の文字列からアセンブリを生成する最小のコンパイラを動かし、変換と実行の違いを確かめる。">
+  <title>第２章　最小のコンパイラ｜実験で理解するコンパイラ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">本文へ移動</a>
+  <details class="sidebar">
+    <summary>目次</summary>
+    <aside>
+      <p class="brand">実験で理解する<br>コンパイラ</p>
+      <p class="edition">新しい教科書</p>
+      <nav aria-label="本の目次">
+        <a href="contents.html">目次　全体の章立て</a>
+        <a href="index.html">序章　本の構成</a>
+        <a href="machine-code.html">第１章　機械語とアセンブラ</a>
+        <a href="minimal-compiler.html" aria-current="page">第２章　最小のコンパイラ</a>
+        <a href="tokenization.html">第３章　字句解析</a>
+      </nav>
+      <nav class="contents" aria-label="この章の目次">
+        <a href="#question">１　この章で扱う問い</a>
+        <a href="#theory">２　この章の理論</a>
+        <a href="#hands-on">３　ハンズオン</a>
+        <a href="#check">４　理解チェック</a>
+      </nav>
+      <a class="previous" href="../index.html">以前の教科書を読む</a>
+    </aside>
+  </details>
+  <main id="main">
+    <header>
+      <p class="eyebrow">第２章</p>
+      <h1>最小のコンパイラ</h1>
+      <p class="lead">前章で手書きした命令を、今度はプログラムに作らせる。</p>
+      <p>前章では、アセンブリを書いて実行ファイルを作りました。今回は「９を返す命令を書いてほしい」と、数字の文字列で指定します。その文字列を読み、対応するアセンブリを出力するプログラムが、この章で作るコンパイラです。</p>
+    </header>
+    <section id="question" aria-labelledby="question-title">
+      <h2 id="question-title"><span class="number">１</span>この章で扱う問い</h2>
+      <p><strong>数字だけのソースコードを、実行できるプログラムに変えるには？</strong></p>
+      <p>入力が９なら９を、４２なら４２を返すプログラムを作ります。入力が変わると、生成する命令のどこが変わるか。そして、変換するプログラムと、変換してできたプログラムは、それぞれいつ動くかを確かめます。</p>
+      <p>前提は、第１章の <code>mov</code>、<code>ret</code>、アセンブルとリンク、終了状態です。実行環境は同じコンテナを使います。実装にはＣ言語を使い、コードの読み方も必要な箇所で説明します。</p>
+    </section>
+    <section id="theory" aria-labelledby="theory-title">
+      <h2 id="theory-title"><span class="number">２</span>この章の理論</h2>
+      <h3>まず、受け付ける言語を決める</h3>
+      <p>変換するには、入力をどう解釈するかが決まっている必要があります。この章の言語は、<strong>半角数字が１文字以上並んだ、０〜２５５の整数１個</strong>だけです。その意味を「この整数を返して終了するプログラム」と定めます。先頭の０は許し、<code>009</code> も９として扱います。</p>
+      <p>空文字、空白、符号、足し算などはまだ受け付けません。たとえば <code>9+3</code> はエラーにします。０〜２５５という範囲は、シェルの終了状態で結果を欠けずに観察するための、この教材の制限です。ＣＰＵやコンパイラ一般がこの範囲しか扱えない、という意味ではありません。</p>
+      <h3>数字の文字列を、命令の文字列へ変換する</h3>
+      <p>入力 <code>9</code> に対して、次のアセンブリを出力すれば目的を満たせます。</p>
+      <pre><code>.intel_syntax noprefix
+.text
+.globl main
+main:
+    mov rax, 9
+    ret
+.section .note.GNU-stack,"",@progbits</code></pre>
+      <p>前章と同じ準備用の指定を置き、<code>main</code> で９を <code>rax</code> に入れて戻ります。入力が４２なら、<code>mov rax, 9</code> の９を４２に変えます。この言語では、入力によって変える箇所が一つだけなので、固定の文章に値を埋め込む方法でコード生成できます。</p>
+      <figure class="concept-figure">
+        <figcaption><strong>図１　入力が変えるのは、命令中の数値</strong><span>出力も、この段階では人間が読める文字列です。</span></figcaption>
+        <div class="translation-flow">
+          <div class="flow-stage">入力の文字列 <code>"42"</code><small>２文字の数字を受け取る</small></div>
+          <div class="flow-arrow">↓ <span>文字を読み、値４２を求める</span></div>
+          <div class="flow-stage focus-stage">自作コンパイラ<small>固定のアセンブリに、値を埋め込む</small></div>
+          <div class="flow-arrow">↓ <span>文字列として出力</span></div>
+          <div class="flow-stage"><code>mov rax, 42</code><br><code>ret</code><small>ここでは出力の本体部分だけを示す</small></div>
+        </div>
+        <p class="figure-takeaway">コンパイラの実行中に、この <code>mov</code> が動くわけではありません。生成したコードをアセンブル・リンクし、その実行ファイルを起動したときに動きます。</p>
+      </figure>
+      <h3>「コンパイラを作る」と「出力したプログラムを作る」</h3>
+      <p>ここには２つのプログラムが登場します。一つは、Ｃで書いた<strong>自作コンパイラ</strong>。もう一つは、それが生成したコードから作る<strong>実験対象のプログラム</strong>です。既存の <code>gcc</code> を使う箇所も２回ありますが、入力と目的が違います。</p>
+      <figure class="concept-figure">
+        <figcaption><strong>図２　２つのプログラムを区別する</strong><span>上段は変換する道具の準備、下段はその道具を使う流れです。</span></figcaption>
+        <div class="map-group">
+          <h3>最初に：コンパイラ自体を作る</h3>
+          <div class="map-artifact"><code>compiler.c</code><small>自作コンパイラのＣのソース</small></div>
+          <div class="map-arrow">↓ <small><code>gcc</code> がＣをコンパイルしてリンク</small></div>
+          <div class="map-artifact"><code>/tmp/ch02-compiler</code><small>数字をアセンブリへ変換する実行ファイル</small></div>
+        </div>
+        <div class="translation-flow">
+          <div class="flow-arrow">↓ <span>この道具を、入力９で実行</span></div>
+          <div class="flow-stage"><code>/tmp/ch02-result.s</code><small>自作コンパイラが出力したアセンブリ</small></div>
+          <div class="flow-arrow">↓ <span><code>gcc</code> がアセンブルとリンクを手配</span></div>
+          <div class="flow-stage"><code>/tmp/ch02-program</code><small>９を返す実験対象の実行ファイル</small></div>
+          <div class="flow-arrow">↓ <span>こちらを実行して、終了状態を確認</span></div>
+          <div class="flow-stage">終了状態：９</div>
+        </div>
+      </figure>
+      <p>この章では、Ｃで書いたコンパイラが、数字だけの小さな言語を扱います。<strong>コンパイラを書く言語と、コンパイラが受け付ける言語は別</strong>です。まだＣのプログラムを入力できるわけではありません。</p>
+      <h3>同じ gcc が、Ｃにもアセンブリにも使える理由</h3>
+      <p><code>gcc</code> コマンドは、必要な道具を順番に呼び出し、コンパイル・アセンブル・リンクを手配する役も持っています。このような役割を<strong>ドライバ</strong>と呼びます。入力ファイルの種類とオプションによって、どの工程から始め、どこで止めるかが変わります。</p>
+      <p>Ｃのソースを渡すと、前処理（ヘッダの取り込みなど）、コンパイル、アセンブル、リンクを経て実行ファイルを作れます。一方、<code>.s</code> ファイルはすでにアセンブリなので、アセンブルから始めます。今回の環境では、機械語への変換は既存のアセンブラ、部品の結合はリンカが担当し、<code>gcc</code> がそれらを呼び出します。</p>
+      <div class="table-scroll"><table>
+        <caption>入力とオプションによる、処理範囲の違い</caption>
+        <thead><tr><th>コマンド</th><th>処理と停止位置</th></tr></thead>
+        <tbody>
+          <tr><td><code>gcc -S compiler.c</code></td><td>Ｃからアセンブリを生成して止める。出力は <code>compiler.s</code>。</td></tr>
+          <tr><td><code>gcc -c compiler.c</code></td><td>Ｃからアセンブリへの変換とアセンブルを行い、オブジェクトファイルで止める。出力は <code>compiler.o</code>。リンクはしない。</td></tr>
+          <tr><td><code>gcc -o /tmp/ch02-compiler compiler.c</code></td><td>Ｃから始め、アセンブルとリンクまで行い、コンパイラ自身の実行ファイルを作る。</td></tr>
+          <tr><td><code>gcc -o /tmp/ch02-program /tmp/ch02-result.s</code></td><td>生成済みのアセンブリから始め、アセンブルとリンクで実験対象の実行ファイルを作る。</td></tr>
+        </tbody>
+      </table></div>
+      <p><code>-S</code> はアセンブリの生成後、<code>-c</code> はオブジェクトファイルの生成後で止める指定です。小文字・大文字も区別します。<code>-o</code> は出力先を指定するもので、それ自体は停止する工程を決めません。途中のアセンブリが、毎回手元にファイルとして残るわけでもありません。</p>
+      <p class="note">この章の自作コンパイラは「数字の文字列からアセンブリを出す」ところまでを担当します。その出力を実行ファイルにする工程は、<code>gcc</code> を窓口にして既存のアセンブラとリンカへ任せています。</p>
+      <h3>実装を、入力・確認・出力に分けて読む</h3>
+      <p>完成した実装は <a href="labs/ch02/compiler.c">実験用の compiler.c</a> に用意しています。以下は、そのファイルを役割ごとに取り出したものです。最初に読む部分は、引数の数と空の入力を確認します。</p>
+      <pre><code>int main(int argc, char **argv) {
+    if (argc != 2) {
+        fprintf(stderr, "使い方：コンパイラに０〜２５５の整数を１つ渡してください。\n");
+        return 1;
+    }
+
+    const char *source = argv[1];
+    if (source[0] == '\0') {
+        fprintf(stderr, "入力が空です。\n");
+        return 1;
+    }</code></pre>
+      <p><code>argc</code> はプログラム名を含む引数の数、<code>argv</code> は引数の文字列を並べたものです。<code>/tmp/ch02-compiler 42</code> なら、<code>argv[0]</code> がプログラム名、<code>argv[1]</code> が文字列 <code>"42"</code> となり、<code>argc</code> は２です。ここでは、この引数の文字列そのものをソースコードとして扱います。</p>
+      <p><code>source</code> は入力文字列の先頭を指します。<code>source[0]</code> は最初の文字です。Ｃの文字列は末尾に終端を示す <code>'\0'</code> があるため、最初からこれなら入力は空です。<code>'0'</code> は数字の０という文字、<code>'\0'</code> は文字列の終端であり、別のものです。</p>
+      <p><code>fprintf(stderr, ...)</code> はエラーの説明を標準エラー出力へ書きます。<code>return 1</code> はコンパイラ自身を失敗の終了状態で終えます。引数の数を先に確認するので、存在しない <code>argv[1]</code> を読まずに済みます。</p>
+      <pre><code>int value = 0;
+for (int i = 0; source[i] != '\0'; i++) {
+    if (source[i] &lt; '0' || source[i] &gt; '9') {
+        fprintf(stderr, "半角数字だけを入力してください。\n");
+        return 1;
+    }
+    value = value * 10 + (source[i] - '0');
+    if (value &gt; 255) {
+        fprintf(stderr, "整数は０〜２５５の範囲で入力してください。\n");
+        return 1;
+    }
+}</code></pre>
+      <p><code>i</code> を０、１、２と増やし、終端まで一文字ずつ読みます。<code>||</code> は「または」で、数字の範囲外の文字なら終了します。数字だと確認した後、<code>source[i] - '0'</code> で文字を０〜９の数値へ変えます。数字の文字コードは連続しているので、文字 <code>'4'</code> と <code>'0'</code> の差は４になります。</p>
+      <p><code>value * 10</code> は、すでに読んだ数を十進数で一桁左へずらす操作です。そこに新しい一桁を足します。入力が <code>42</code> なら、次のように変わります。</p>
+      <div class="table-scroll"><table><caption>文字から数値４２を組み立てる</caption><thead><tr><th>読む文字</th><th>更新前</th><th>計算</th><th>更新後</th></tr></thead><tbody><tr><td><code>'4'</code></td><td>０</td><td>０×１０＋４</td><td>４</td></tr><tr><td><code>'2'</code></td><td>４</td><td>４×１０＋２</td><td>４２</td></tr></tbody></table></div>
+      <p>各桁を読むたびに２５５を超えていないか確認します。超えた時点で終了するため、長すぎる入力を最後まで巨大な整数として計算し続けることもありません。</p>
+      <pre><code>printf(".intel_syntax noprefix\n");
+printf(".text\n");
+printf(".globl main\n");
+printf("main:\n");
+printf("    mov rax, %d\n", value);
+printf("    ret\n");
+printf(".section .note.GNU-stack,\"\",@progbits\n");
+return 0;</code></pre>
+      <p><code>printf</code> は標準出力へ文字列を書きます。<code>%d</code> が <code>value</code> の十進数表記に置き換わり、<code>\n</code> が改行になります。Ｃの文字列の中に引用符を出すには <code>\"</code> と書くので、最後の行の出力には通常の <code>""</code> が現れます。これらの関数を使うため、ファイル先頭には <code>#include &lt;stdio.h&gt;</code> を置いています。</p>
+      <p>最後の <code>return 0</code> は<strong>コンパイラ自身が変換に成功した</strong>ことを示します。生成したプログラムが返す値は、出力された <code>mov</code> の中にあります。入力９でも、コンパイラの終了状態は０、生成したプログラムの終了状態は９です。</p>
+      <p class="note">コードを標準出力へ、エラーを標準エラー出力へ分けることで、生成物に説明文が混ざるのを防ぎます。また、入力の確認を終えるまでコードを出力しない構成にしています。</p>
+    </section>
+    <section id="hands-on" aria-labelledby="hands-on-title">
+      <h2 id="hands-on-title"><span class="number">３</span>ハンズオン</h2>
+      <h3>準備：コンテナ内で実験フォルダへ移動する</h3>
+      <p>第１章で開いたコンテナのシェルをそのまま使えます。閉じていた場合は、コンテナ実行アプリを起動し、マック側のリポジトリで <code>make -f docker.mk shell</code> を実行して入り直してください。作成済みのイメージは、今回は作り直す必要がありません。</p>
+      <pre><code>cd /workspace/textbook/new/labs/ch02</code></pre>
+      <p>この <code>cd</code> は、コンテナ内で第２章のファイルがある場所に移動します。編集は、別のマック側ターミナルで次を実行すると、使い慣れたエディタで行えます。</p>
+      <pre><code>nvim /Users/hatasatoki/Develops/compilerbook/textbook/new/labs/ch02/compiler.c</code></pre>
+      <p>マックとコンテナは同じ教材ファイルを共有しています。以降のビルド・実行コマンドは、コンテナ側のターミナルで実行してください。</p>
+      <h3>実験１：コンパイラを作り、出力を見る</h3>
+      <pre><code>gcc -std=c11 -Wall -Wextra -o /tmp/ch02-compiler compiler.c
+/tmp/ch02-compiler 9
+echo $?</code></pre>
+      <p>１行目はＣの実装からコンパイラの実行ファイルを作ります。<code>-std=c11</code> はＣの規格、<code>-Wall -Wextra</code> は警告を出す指定、<code>-o</code> は保存先の指定です。ビルドに成功してから次へ進みます。</p>
+      <p><strong>２行目の実行前に：</strong>画面に出るのは数字９でしょうか、それとも命令の文字列でしょうか。３行目が表示する終了状態も予想してください。</p>
+      <details><summary>実行後に開く：何を実行したか</summary><p>画面には <code>mov rax, 9</code> を含むアセンブリが表示され、その後の終了状態は０です。動いたのは変換する側のコンパイラで、出力された命令はまだ実行していません。</p></details>
+      <h3>実験２：出力をファイルに保存し、そのプログラムを動かす</h3>
+      <pre><code>/tmp/ch02-compiler 9 &gt; /tmp/ch02-result.s
+echo $?
+cat /tmp/ch02-result.s</code></pre>
+      <p><code>&gt;</code> はシェルの<strong>リダイレクト</strong>です。通常なら画面に出る標準出力を、右側のファイルに保存します。このファイルはコマンド実行前に作成または空にされるため、再実行すると以前の内容を置き換えます。</p>
+      <p>直後の <code>echo $?</code> が０であることを確認します。<code>cat</code> は保存された内容を表示するだけで、実行はしません。ここで生成コードを読んだ後、次を実行します。</p>
+      <pre><code>gcc -o /tmp/ch02-program /tmp/ch02-result.s
+/tmp/ch02-program
+echo $?</code></pre>
+      <p>１行目は、今回はＣではなく生成済みの <code>.s</code> ファイルを入力にし、アセンブルとリンクで実行ファイルを作ります。２行目でその実行ファイルを起動し、３行目で終了状態を表示します。成功して作成されたことを確認してから実行し、<code>echo $?</code> は間に別のコマンドを挟まずに実行してください。</p>
+      <details><summary>実行後に開く：２つの終了状態</summary><p>生成したプログラムの終了状態は９です。前の０は「コンパイラの変換成功」、今回の９は「生成したプログラムの返した値」です。<code>$?</code> は常に直前に動かしたコマンドの状態なので、何を直前に動かしたかとセットで読みます。</p></details>
+      <h3>実験３：入力だけを変える</h3>
+      <p>入力を４２にしたとき、生成ファイルのどの行が変わり、どの行が変わらないかを先に予想します。コンパイラ自身は変更していないので、<code>compiler.c</code> の再ビルドは不要です。</p>
+      <pre><code>/tmp/ch02-compiler 42 &gt; /tmp/ch02-result.s
+cat /tmp/ch02-result.s
+gcc -o /tmp/ch02-program /tmp/ch02-result.s
+/tmp/ch02-program
+echo $?</code></pre>
+      <details><summary>観察後に開く：変わる箇所と再生成が必要なもの</summary><p><code>mov rax, 9</code> が <code>mov rax, 42</code> に変わり、終了状態は４２です。入力を変えたらアセンブリの生成と、そのアセンブル・リンクをやり直します。コンパイラの実装を変えた場合には、さらにその前のコンパイラ自身のビルドも必要です。</p></details>
+      <h3>実験４：言語の境界を確かめる</h3>
+      <p><code>9+3</code> は、９として扱われるでしょうか、１２になるでしょうか、それとも拒否されるでしょうか。入力確認のループを根拠に予想します。</p>
+      <pre><code>/tmp/ch02-compiler '9+3' &gt; /tmp/ch02-rejected.s
+echo $?
+cat /tmp/ch02-rejected.s</code></pre>
+      <p>引用符はシェルに一つの文字列として渡す指定で、コンパイラが受け取る文字列自体には含まれません。今回の無効な入力の後は、アセンブル・リンクへ進みません。</p>
+      <details><summary>観察後に開く：エラーが画面に残る理由</summary><p>半角数字だけを入力するようエラーが出て、終了状態は１です。数字９を読んだ後、<code>+</code> で拒否します。コード生成まで進まないのでファイルは空です。<code>&gt;</code> が保存するのは標準出力なので、標準エラー出力のメッセージは画面に残ります。</p></details>
+      <p>同じ実行コマンドの引数を <code>255</code>、<code>256</code>、<code>''</code> に変え、受け付ける境界を確かめてください。成功した入力について生成コードを見て、失敗した入力については終了状態と説明を確認します。</p>
+      <p class="note">この章の区切りは、入力・生成コード・実行結果の対応を説明でき、コンパイラ自身と生成したプログラムの終了状態を区別できたときです。</p>
+    </section>
+    <section id="check" aria-labelledby="check-title">
+      <h2 id="check-title"><span class="number">４</span>理解チェック</h2>
+      <h3>入力が <code>007</code> なら、何が出力されるか？</h3>
+      <details><summary>解説を読む</summary><p>数値は７になり、<code>mov rax, 7</code> が出力されます。０、０、７を順に読んだ計算結果を <code>%d</code> で出すため、入力の見た目をそのままコピーしてはいません。</p></details>
+      <h3>コンパイラ実行後の <code>$?</code> と、生成したプログラム実行後の <code>$?</code> は、それぞれ何を表すか？</h3>
+      <p>入力０をコンパイラに渡して変換し、生成したコードをビルドして実行したとします。どちらの実行直後も <code>echo $?</code> は０を表示しました。それぞれの０が何を示すか説明してください。</p>
+      <details><summary>解説を読む</summary><p>コンパイラ実行後の０は、入力の変換に成功して正常に終了したことを示します。生成したプログラム実行後の０は、そのプログラムが入力に対応する値０を返して終了した結果です。<code>$?</code> は直前に実行したコマンドの終了状態なので、同じ数値でも、どのプログラムの何を確認しているかを区別して読みます。</p></details>
+      <h3>入力を４２に変えたのに、実行結果が９のままなら？</h3>
+      <details><summary>解説を読む</summary><p>生成した <code>.s</code> の中身、そこからのビルドの成功、実行したファイルのパスを順に確認します。アセンブリだけ更新しても、既存の実行ファイルは変わりません。コンパイラのソースを変えたなら、その再ビルドも確認します。</p></details>
+      <h3>なぜ <code>9+3</code> を扱うには、数字の置き換えだけでは足りないか？</h3>
+      <details><summary>解説を読む</summary><p>９と３という数と、足すという操作を区別して理解する必要があるからです。今の処理は入力全体を整数１個として扱い、<code>+</code> を拒否します。次章ではまず文字列を数や記号の単位に分け、その先で構造と命令への変換を学びます。</p></details>
+      <div class="sources"><h3>参照先</h3><p><a href="https://www.sigbus.info/compilerbook">原書「低レイヤを知りたい人のためのＣコンパイラ作成入門」</a>の「ステップ１：整数１個をコンパイルする言語の作成」に対応します。本章では観察しやすいよう、入力範囲を制限し、入力の確認を加えています。</p><p>検証状況：教材のリナックス環境でコンパイラのビルド、生成コードのアセンブル・リンク・実行を確認しました。入力０・９・４２・２５５・００７の結果、および空文字・数字以外・範囲外・引数の過不足の拒否を確認しています。</p></div>
+    </section>
+    <footer><nav class="chapter-navigation" aria-label="前後の章">
+      <a class="chapter-prev" href="machine-code.html" rel="prev">第１章　機械語とアセンブラ</a>
+      <a class="chapter-next" href="tokenization.html" rel="next">第３章　字句解析</a>
+    </nav></footer>
+  </main>
+</body>
+</html>

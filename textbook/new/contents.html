@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="実験で理解するコンパイラの目次。各章で扱う問いと、作成状況を示します。">
+  <title>目次｜実験で理解するコンパイラ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">本文へ移動</a>
+  <details class="sidebar">
+    <summary>目次</summary>
+    <aside>
+      <p class="brand">実験で理解する<br>コンパイラ</p>
+      <p class="edition">新しい教科書</p>
+      <nav aria-label="本の目次">
+        <a href="contents.html" aria-current="page">目次　全体の章立て</a>
+        <a href="index.html">序章　本の構成</a>
+        <a href="machine-code.html">第１章　機械語とアセンブラ</a>
+        <a href="minimal-compiler.html">第２章　最小のコンパイラ</a>
+        <a href="tokenization.html">第３章　字句解析</a>
+      </nav>
+      <a class="previous" href="../index.html">以前の教科書を読む</a>
+    </aside>
+  </details>
+  <main id="main">
+    <header>
+      <p class="eyebrow">実験で理解するコンパイラ</p>
+      <h1>目次</h1>
+      <p class="lead">実行される命令から出発し、文字列を解析してコードを生成する仕組みへ。その後、変数・関数・型と、プログラムを支える実行環境を学びます。</p>
+      <p>各章は「この章で扱う問い」「この章の理論」「ハンズオン」「理解チェック」の４部構成です。一章で確かめる対象を絞り、具体的な観察と理論を結びつけて進みます。</p>
+      <p>序章と第１〜３章は作成済みです。第４章以降は作成予定で、学習を進めながら範囲や分け方を調整します。</p>
+    </header>
+    <section aria-labelledby="process-title">
+      <h2 id="process-title">処理の全体像と、各章の位置</h2>
+      <p>下向きの矢印は、ソースコードが実行されるまでの順序です。各枠に、その処理を主に扱う章を示します。章番号を押すと、下の目次にある問いへ移動できます。</p>
+      <figure class="concept-figure chapter-map">
+        <figcaption><strong>文字列から、実行中の状態へ</strong><span>本書で最初に作る、アセンブリを出力するコンパイラを中心とした概略図です。</span></figcaption>
+        <div class="map-artifact">ソースコード<small>文字列として書かれたプログラム</small></div>
+        <div class="map-arrow" aria-hidden="true">↓</div>
+        <div class="map-group">
+          <h3>自作するコンパイラの内部</h3>
+          <div class="map-stage"><strong>字句解析</strong><span>文字列を、数・名前・記号などの単位に分ける</span><a href="#chapter-3">第３章　字句解析</a></div>
+          <div class="map-arrow">↓ <small>トークン列：分けた単位の並び</small></div>
+          <div class="map-stage"><strong>構文解析</strong><span>並びを読み、式や宣言の構造を組み立てる</span><a href="#chapter-4">第４章　構文解析</a><a href="#chapter-13">第１３章　Ｃの型の構文（宣言の読み取り）</a></div>
+          <div class="map-arrow">↓ <small>構文木：式などの組み立てを表す木構造</small></div>
+          <div class="map-stage"><strong>コード生成</strong><span>計算や読み書きを行う命令へ変換する</span><a href="#chapter-5">第５章　式のコード生成</a></div>
+          <p class="map-context">変数や型を扱う段階では、名前が何を指すか、どんな型かという情報も使います。この図では、その解析の細部を省略しています。</p>
+        </div>
+        <div class="map-arrow" aria-hidden="true">↓</div>
+        <div class="map-artifact">アセンブリコード<small>人間が読める形で書いた命令</small></div>
+        <div class="map-arrow" aria-hidden="true">↓</div>
+        <div class="map-stage"><strong>アセンブル</strong><span>アセンブラが命令を機械語へ変換する</span><a href="#chapter-1">第１章　機械語とアセンブラ</a></div>
+        <div class="map-arrow">↓ <small>オブジェクトファイル：結合前の部品</small></div>
+        <div class="map-stage"><strong>リンク</strong><span>別々の部品の名前と参照先を結び付ける</span><a href="#chapter-6">第６章　分割コンパイルとリンク</a><a href="#chapter-12">第１２章　スタティックリンクとダイナミックリンク</a></div>
+        <div class="map-arrow">↓ <small>実行ファイル</small></div>
+        <div class="map-stage"><strong>読み込み・実行の準備</strong><span>命令やデータをメモリ上に用意する</span><a href="#chapter-11">第１１章　実行イメージと初期化</a><a href="#chapter-12">第１２章　共有ライブラリとの動的な結び付け</a></div>
+        <div class="map-arrow" aria-hidden="true">↓</div>
+        <div class="map-stage"><strong>ＣＰＵによる実行</strong><span>命令に従って、レジスタやメモリの状態が変わる</span><a href="#chapter-1">第１章　命令の動きと結果の観察</a></div>
+        <p class="figure-takeaway">第１章で出力側の命令と実行を先に学び、第２章で小さな入力から実行までを一度つなぎます。その後、第３章以降で内部の処理や扱える言語機能を広げます。</p>
+      </figure>
+      <h3>複数の段階をつなぐ章</h3>
+      <p>次の章は、一つの処理の箱だけには収まりません。ソースコード上の意味が、生成する命令や実行中のデータにどう対応するかを扱います。</p>
+      <div class="map-crosscut">
+        <div><a href="#chapter-2">第２章　最小のコンパイラ</a><p>数字の入力 → アセンブリの出力 → ビルド → 実行。全体の経路を、最小のプログラムで一度通します。</p></div>
+        <div><a href="#chapter-7">第７章　ローカル変数とスタック</a><p>ソース上の変数 → 値を置く場所の決定 → 読み書きする命令 → 実行中のスタック、をつなぎます。</p></div>
+        <div><a href="#chapter-8">第８章　関数呼び出し</a><p>関数を呼ぶ式 → 引数・戻り値の受け渡しと呼び出し命令 → 実行の移動、をつなぎます。</p></div>
+        <div><a href="#chapter-9">第９章　整数の表現</a><p>数値の意味と、レジスタやメモリに保持するビット列の対応を学びます。計算命令の結果を理解する土台になります。</p></div>
+        <div><a href="#chapter-10">第１０章　ポインタと文字列</a><p>アドレスを扱う式や文字列 → アドレス計算・データの配置 → 実行中のメモリアクセス、をつなぎます。</p></div>
+      </div>
+      <p class="note">動的なリンクは、実行ファイルを作るときだけで完結するとは限りません。起動時や実行中にも結び付けが行われるため、第１２章は図の複数の場所に登場します。初期化も準備時だけでなく実行中に行われるものがあり、第１１章で区別します。</p>
+    </section>
+    <section aria-labelledby="chapters-title">
+      <h2 id="chapters-title">各章で扱う問い</h2>
+      <div class="chapter-entry">
+        <h3><a href="index.html">序章　本の構成</a></h3>
+        <p>理論と具体的な経験をどう結びつけ、自分の理解を育てるか。本書の読み方と、説明・図解・実験を作る指針を定めます。</p>
+      </div>
+      <div class="chapter-entry">
+        <h3 id="chapter-1"><a href="machine-code.html">第１章　機械語とアセンブラ</a></h3>
+        <p>コンパイラが出力するコードは、どう実行され、計算結果を生むのか？</p>
+      </div>
+      <div class="chapter-entry">
+        <h3 id="chapter-2"><a href="minimal-compiler.html">第２章　最小のコンパイラ</a></h3>
+        <p>数字だけのソースコードを、実行できるプログラムに変えるには？</p>
+      </div>
+      <div class="chapter-entry">
+        <h3 id="chapter-3"><a href="tokenization.html">第３章　字句解析</a></h3>
+        <p>ソースコードの文字列から、意味のある単位をどう取り出すか？</p>
+      </div>
+      <div class="chapter-entry">
+        <h3 id="chapter-4">第４章　構文解析 <small>作成予定</small></h3>
+        <p>演算子の優先順位や括弧を、どう構造として表すか？</p>
+      </div>
+      <div class="chapter-entry">
+        <h3 id="chapter-5">第５章　式のコード生成 <small>作成予定</small></h3>
+        <p>式の構造から、正しい順序で計算する命令をどう作るか？</p>
+      </div>
+      <div class="chapter-entry">
+        <h3 id="chapter-6">第６章　分割コンパイルとリンク <small>作成予定</small></h3>
+        <p>別々に作ったコードは、どう一つのプログラムになるか？</p>
+      </div>
+      <div class="chapter-entry">
+        <h3 id="chapter-7">第７章　ローカル変数とスタック <small>作成予定</small></h3>
+        <p>変数の値はどこに置かれ、どう読み書きされるか？</p>
+      </div>
+      <div class="chapter-entry">
+        <h3 id="chapter-8">第８章　関数呼び出し <small>作成予定</small></h3>
+        <p>引数・戻り値・実行の続きは、どう受け渡されるか？</p>
+      </div>
+      <div class="chapter-entry">
+        <h3 id="chapter-9">第９章　整数の表現 <small>作成予定</small></h3>
+        <p>ビット列はどう整数になり、計算にはどんな限界があるか？</p>
+      </div>
+      <div class="chapter-entry">
+        <h3 id="chapter-10">第１０章　ポインタと文字列 <small>作成予定</small></h3>
+        <p>アドレスを使って、データをどう扱うか？</p>
+      </div>
+      <div class="chapter-entry">
+        <h3 id="chapter-11">第１１章　実行イメージと初期化 <small>作成予定</small></h3>
+        <p>実行前のファイルが、どうメモリ上の状態になるか？</p>
+      </div>
+      <div class="chapter-entry">
+        <h3 id="chapter-12">第１２章　スタティックリンクとダイナミックリンク <small>作成予定</small></h3>
+        <p>外部のコードを、いつ・どう結びつけるか？</p>
+      </div>
+      <div class="chapter-entry">
+        <h3 id="chapter-13">第１３章　Ｃの型の構文 <small>作成予定</small></h3>
+        <p>複雑な宣言は、どう読んで構造化するか？</p>
+      </div>
+    </section>
+    <footer><nav class="chapter-navigation" aria-label="前後の章">
+      <a class="chapter-next" href="index.html" rel="next">序章　本の構成</a>
+    </nav></footer>
+  </main>
+</body>
+</html>
