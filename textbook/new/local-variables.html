@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="変数名をスタック上の保存場所に対応させ、代入・読み出し・再代入を行う小さなコンパイラを実験する。">
+  <title>第７章　ローカル変数とスタック｜実験で理解するコンパイラ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">本文へ移動</a>
+  <details class="sidebar"><summary>目次</summary><aside>
+    <p class="brand">実験で理解する<br>コンパイラ</p><p class="edition">新しい教科書</p>
+    <nav aria-label="本の目次">
+      <a href="contents.html">目次　全体の章立て</a><a href="index.html">序章　本の構成</a>
+      <a href="machine-code.html">第１章　機械語とアセンブラ</a><a href="minimal-compiler.html">第２章　最小のコンパイラ</a>
+      <a href="tokenization.html">第３章　字句解析</a><a href="parsing.html">第４章　構文解析</a>
+      <a href="code-generation.html">第５章　式のコード生成</a><a href="separate-compilation.html">第６章　分割コンパイルとリンク</a>
+      <a href="local-variables.html" aria-current="page">第７章　ローカル変数とスタック</a>
+      <a href="function-calls.html">第８章　関数呼び出し</a>
+      <a href="integer-representation.html">第９章　整数の表現</a>
+      <a href="pointers-and-strings.html">第１０章　ポインタと文字列</a>
+      <a href="executable-image.html">第１１章　実行イメージと初期化</a>
+      <a href="linking-libraries.html">第１２章　スタティックリンクとダイナミックリンク</a>
+      <a href="type-declarations.html">第１３章　Ｃの型の構文</a>
+    </nav>
+    <nav class="contents" aria-label="この章の目次"><a href="#question">１　この章で扱う問い</a><a href="#theory">２　この章の理論</a><a href="#hands-on">３　ハンズオン</a><a href="#check">４　理解チェック</a></nav>
+    <a class="previous" href="../index.html">以前の教科書を読む</a>
+  </aside></details>
+  <main id="main">
+    <header><p class="eyebrow">第７章</p><h1>ローカル変数とスタック</h1><p class="lead">名前を保存場所に対応させ、後の計算でその値を使う。</p><p>第５章のコンパイラへ戻り、変数と複数の文を追加します。計算した値を一度使って終えるだけでなく、名前を付けて保存し、後から読み出したり書き換えたりできるようにします。</p></header>
+    <section id="question" aria-labelledby="question-title">
+      <h2 id="question-title"><span class="number">１</span>この章で扱う問い</h2>
+      <p><strong>ソースに書いた変数名は、実行中のどこに対応し、代入や読み出しはどんな命令になるか？</strong></p>
+      <p>今回の入力は <code>a=3; b=5; a+b*2;</code> です。３を a に保存し、５を b に保存し、最後に保存した値を使って１３を求めます。計算中に <code>rax</code> を上書きしても a と b の値が残るよう、レジスタとは別の保存場所を用意します。</p>
+      <p>前提は第４章の構文木と、第５章の「式の結果は rax」「途中の左の値は push で保存する」という約束です。今回は、その一時保存とは用途の異なる領域を、同じスタック上に用意します。</p>
+    </section>
+    <section id="theory" aria-labelledby="theory-title">
+      <h2 id="theory-title"><span class="number">２</span>この章の理論</h2>
+      <h3>今回の小さな言語を決める</h3>
+      <pre><code>a=3;
+b=5;
+a+b*2;</code></pre>
+      <p>セミコロン <code>;</code> で終わる一つの処理を、ここでは<strong>文</strong>と呼びます。上から順に文を実行し、最後の文の値を、生成する main の返り値にします。代入文の値は、代入した値です。この「最後の文の値を返す」という規則は教材独自のもので、Ｃの main が自動的に同じ動作をするわけではありません。</p>
+      <p>変数名は a から z の小文字１文字、値は８バイトの整数として扱います。宣言を書く構文はまだ用意せず、最初の代入から利用できることにします。数の入力は第５章と同じ０〜２５５ですが、計算や変数の値までこの範囲に制限しているわけではありません。四則演算と括弧を使えます。</p>
+      <p>代入は文としてだけ扱います。<code>a=a+1;</code> は使えますが、<code>a=b=3;</code> や <code>(a=3)+2;</code> は扱いません。分岐、ループ、複数の関数、型の宣言、単独の負号もまだありません。扱う範囲を絞り、変数の保存と読み出しに集中します。</p>
+      <h3>変数名は、保存場所を決めるための手がかり</h3>
+      <p>ＣＰＵの計算命令が a という文字を検索するわけではありません。コンパイラが「a の値はこの場所、b の値はその隣」と先に決め、その場所を読む命令や書く命令を出します。</p>
+      <p>本章では a に８バイト、b に次の８バイト、というように、２６個の場所を固定で割り当てます。使っていない名前の分も確保する単純な実装です。実際に使った変数だけへ場所を割り当てる方法は、名前の管理を拡張するときに考えられます。</p>
+      <figure class="concept-figure"><figcaption><strong>図１　名前を、読み書きする場所へ変える</strong><span>左から右はコンパイル時の変換です。値の書き込みが起きるのは、生成した命令の実行時です。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 190" role="img" aria-labelledby="name-title name-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="name-title">代入文から保存命令への対応</title><desc id="name-desc">a=3という文から、aの保存場所をrbpから8バイト手前と決め、3をraxに入れてその場所に書く命令を生成する。</desc>
+          <g fill="#e9eee5" stroke="#355d4c"><rect x="10" y="50" width="150" height="85" rx="5"/><rect x="205" y="50" width="200" height="85" rx="5"/><rect x="450" y="50" width="300" height="85" rx="5"/></g>
+          <g text-anchor="middle"><text x="85" y="35">ソースの文</text><text x="305" y="35">コンパイラの対応付け</text><text x="600" y="35">出力する命令</text><text x="85" y="101" class="diagram-code">a=3;</text><text x="305" y="85">a の場所は</text><text x="305" y="113" class="diagram-code">rbp − 8</text><text x="182" y="100">→</text><text x="427" y="100">→</text><text x="600" y="85" class="diagram-code">mov rax, 3</text><text x="600" y="113" class="diagram-code">mov [rbp-8], rax</text><text x="380" y="174" class="diagram-small">rbp は、この関数で使う保存場所の基準となるレジスタ</text></g>
+        </svg></div>
+      </figure>
+      <h3>動く rsp と、基準として保つ rbp</h3>
+      <p>第５章では、<code>push</code> と <code>pop</code> のたびに、スタックの先頭を指す <code>rsp</code> が変わりました。この動く位置だけを基準にすると、同じ変数を読むための距離も、計算の途中で変わってしまいます。</p>
+      <p>そこで、本章では <code>rbp</code> という別のレジスタを、関数内の固定した基準として使います。関数の入り口で基準を決め、本文の計算中には変えません。a は <code>rbp - 8</code>、b は <code>rbp - 16</code>、z は <code>rbp - 208</code> という位置にします。基準からの距離を<strong>オフセット</strong>と呼びます。</p>
+      <p>これは今回選んだ実装方法です。変数が必ずスタック上に置かれる、あるいは全コンパイラが必ず rbp を使う、という意味ではありません。最適化したコードでは、値をレジスタに置いたり、変数の保存自体を省いたりすることもあります。</p>
+      <h3>関数の入り口で、保存領域を確保する</h3>
+      <pre><code>push rbp
+mov rbp, rsp
+sub rsp, 208</code></pre>
+      <p>最初の <code>push rbp</code> は、呼び出した側が使っていた rbp の値を保存します。自分の基準として rbp を使い直す前に、元へ戻すための値を残しておくわけです。次の <code>mov rbp, rsp</code> で、その保存位置を今回の関数の基準にします。</p>
+      <p><code>sub rsp, 208</code> は、rsp を小さいアドレスの方向へ２０８バイト移します。２６個×８バイトの変数領域を、自分が使う範囲として確保する操作です。ＯＳへメモリ確保を依頼する命令ではなく、スタックの使用位置を動かしています。また、領域内の値を０にする処理でもありません。</p>
+      <p>こうした関数の入り口の準備を<strong>プロローグ</strong>、一回の関数実行のために用意するスタック上の領域を<strong>スタックフレーム</strong>と呼びます。今回の生成プログラムで変数を持つ関数は main 一つです。</p>
+      <figure class="concept-figure"><figcaption><strong>図２　変数領域と、一時保存の領域を分ける</strong><span>この図は上ほど大きいアドレス、下ほど小さいアドレスです。省略した領域があり、長さは縮尺どおりではありません。第５章の積み重ね図とは上下の表し方が異なります。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 425" role="img" aria-labelledby="frame-title frame-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="frame-title">固定した変数領域の下に一時保存するスタックフレーム</title><desc id="frame-desc">上から戻りアドレス、保存したrbp、a、b、省略したcからy、z。その下にpushで保存する途中結果が置かれる。rbpは保存したrbpの位置を指し、rspは変数領域確保後はz、push後は途中結果の位置を指す。</desc>
+          <g stroke="#355d4c" fill="#f8f6f0"><rect x="185" y="20" width="285" height="42"/><rect x="185" y="62" width="285" height="42"/></g>
+          <g stroke="#355d4c" fill="#e9eee5"><rect x="185" y="104" width="285" height="42"/><rect x="185" y="146" width="285" height="42"/><rect x="185" y="188" width="285" height="60"/><rect x="185" y="248" width="285" height="42"/></g>
+          <rect x="185" y="306" width="285" height="48" fill="#fffef9" stroke="#a3452c" stroke-width="2"/>
+          <g text-anchor="middle"><text x="327" y="47">戻りアドレス</text><text x="327" y="89">呼び出し側の rbp</text><text x="327" y="131">a：８バイト</text><text x="327" y="173">b：８バイト</text><text x="327" y="224">… c から y の領域 …</text><text x="327" y="275">z：８バイト</text><text x="327" y="336">push した途中結果</text></g>
+          <g text-anchor="end" class="diagram-small"><text x="168" y="47">rbp + 8</text><text x="168" y="89">rbp →</text><text x="168" y="131">rbp − 8</text><text x="168" y="173">rbp − 16</text><text x="168" y="275">rbp − 208</text><text x="168" y="336">rbp − 216</text></g>
+          <g class="diagram-small"><text x="490" y="131">変数用に２０８バイト確保</text><text x="490" y="275">← 確保直後の rsp</text><text x="490" y="334">← １回 push した後の rsp</text></g>
+          <text x="380" y="393" text-anchor="middle">一時保存で rsp が動いても、a の位置 rbp − 8 は変わらない</text>
+        </svg></div>
+        <p class="figure-takeaway">変数は確保済みの領域内に保存します。式の途中結果は、その領域よりさらに小さいアドレス側へ push するため、変数の値を上書きしません。</p>
+      </figure>
+      <h3>角括弧は、そのアドレスにあるメモリを表す</h3>
+      <pre><code>mov rax, 3
+mov [rbp - 8], rax
+mov rax, [rbp - 8]</code></pre>
+      <p>１行目はレジスタに３を入れます。２行目は、rbp から８バイト手前の<strong>メモリへ</strong> rax の値を保存します。これが a への代入です。３行目は、同じ場所の<strong>メモリから</strong>値を読み、rax に入れます。これが式の中で a を使う操作です。</p>
+      <p>角括弧の内側は場所を計算する式で、その場所にある値を読み書きします。<code>rbp - 8</code> と書いても rbp 自体は変わりません。また、この命令の８は「変数の値から８を引く」指定でもありません。rax と組み合わせているので、この例では８バイトを読み書きします。</p>
+      <p><code>a=a+1;</code> では、まず a の現在の値を読み、１を足し、その結果を同じ a の場所へ書き戻します。一度代入した値を変えられるのは、後の命令でその場所を上書きできるからです。</p>
+      <h3>文法と構文木を、必要な分だけ広げる</h3>
+      <pre><code>program = statement+
+statement = 名前 '=' expr ';' | expr ';'
+expr = mul (('+' | '-') mul)*
+mul = primary (('*' | '/') primary)*
+primary = 数 | 名前 | '(' expr ')'</code></pre>
+      <p>末尾の <code>+</code> は１回以上の繰り返しです。プログラムは文の列になり、各文は代入か、式だけの文です。四則演算の優先順位は変えず、式の基本要素に変数名を加えます。引用符内の記号は入力に書く記号で、引用符そのものは入力しません。</p>
+      <p><a href="labs/ch07/compiler.c">今回の compiler.c</a> は第５章を土台にしています。字句解析は名前を <code>IDENT</code> という種類のトークンにし、<code>=</code> と <code>;</code> も読み取ります。構文解析の <code>statement</code> は、先頭が「名前、その次が＝」なら代入文、それ以外なら式の文として読みます。</p>
+      <p>構文木には、変数の読み出しを表す <code>'v'</code> と、代入を表す <code>'='</code> のノードを追加します。既存の <code>value</code> フィールドは、数のノードでは数値、変数と代入のノードでは保存位置までの距離として使います。たとえば a のノードでは８です。ノードの種類により、同じフィールドでも意味が違います。</p>
+      <figure class="concept-figure"><figcaption><strong>図３　a=a+1 の左側は保存先、右側の a は読み出し</strong><span>代入ノードは保存先の距離を持ち、右の子に計算する式を持ちます。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 285" role="img" aria-labelledby="assign-title assign-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="assign-title">変数の読み出しと代入を区別した構文木</title><desc id="assign-desc">根は代入で、保存先はrbpから8バイト手前。右の子は足し算で、その左が同じ場所からの読み出し、右が数1。古いaを読んで1を足し、その結果をaに書く。</desc>
+          <path d="M380 75V116M380 160L215 210M380 160L545 210" fill="none" stroke="#355d4c" stroke-width="2"/>
+          <g fill="#e9eee5" stroke="#355d4c"><rect x="210" y="15" width="340" height="60" rx="5"/><circle cx="380" cy="140" r="25"/><rect x="70" y="210" width="290" height="60" rx="5"/><rect x="440" y="210" width="210" height="60" rx="5"/></g>
+          <g text-anchor="middle"><text x="380" y="40">代入：計算結果を保存する</text><text x="380" y="63" class="diagram-small">保存先の距離は８（a の場所）</text><text x="380" y="147" class="diagram-code">+</text><text x="215" y="236">a を読み出す</text><text x="215" y="259" class="diagram-small">距離８の場所の、現在の値</text><text x="545" y="247">数１</text></g>
+        </svg></div>
+      </figure>
+      <p>名前から距離を求める式は <code>(名前 - 'a' + 1) * 8</code> です。a なら８、b なら１６になります。これはコンパイル中の対応付けです。実行時には、具体的な rbp の値と組み合わせて実際のメモリ位置が決まります。</p>
+      <h3>読み出しと代入のコードを生成する</h3>
+      <pre><code>if (node-&gt;op == 'v') {
+    printf("    mov rax, [rbp - %d]\n", node-&gt;value);
+    return;
+}
+if (node-&gt;op == '=') {
+    generate(node-&gt;right);
+    printf("    mov [rbp - %d], rax\n", node-&gt;value);
+    return;
+}</code></pre>
+      <p>読み出しノードでは、その場所の値を rax に入れる命令を出します。これで第５章の「部分木の結果は rax」という約束を守れます。代入ノードでは、右辺の命令を先に出し、その結果の rax を保存する命令を出します。保存しても rax は変わらないため、代入文の値も rax に残ります。</p>
+      <p>プログラム全体では、各文の木の根を配列に保存し、順番に <code>generate</code> を呼びます。一つの文を出力するたびに ret を出すのではありません。すべての文の命令を並べ、最後に一度だけ戻ります。四則演算の生成は第５章のままなので、一時保存の push と pop も引き続き対応します。</p>
+      <h3>読み出す前に、値を入れたか確かめる</h3>
+      <p>領域を確保しただけでは、そこに３や０が入っているとは限りません。そのため本章のコンパイラは、<code>assigned[26]</code> という配列で、各変数へすでに代入したかを確認します。最初はすべて偽で、右辺を解析して文末まで確認できた後に、その変数を代入済みにします。</p>
+      <p>最初の文が <code>a=a+1;</code> なら、右辺の a を読む時点では代入前なので拒否します。<code>a=3; a=a+1;</code> なら、２文目で読む a は代入済みなので受け付けます。この配列が持つのはコンパイル中の「代入したか」という情報で、実行中の a の値ではありません。</p>
+      <p>今回は文が上から順に必ず実行されるため、この単純な検査で足ります。分岐やループを加えた言語では、どの経路でも代入済みかなど、別の考慮が必要です。入力全体の検査に成功してから出力を始めるので、後半の文が不正なら途中までのアセンブリも出力しません。</p>
+      <h3>関数から戻る前に、スタックを元へ戻す</h3>
+      <pre><code>mov rsp, rbp
+pop rbp
+ret</code></pre>
+      <p><code>mov rsp, rbp</code> で、変数用の領域を使い終え、保存しておいた呼び出し側の rbp の位置まで rsp を戻します。<code>pop rbp</code> がその値を復元すると、rsp は戻りアドレスを指します。最後の <code>ret</code> で、呼び出し側の続きへ戻れます。この終わりの処理を<strong>エピローグ</strong>と呼びます。</p>
+      <p>この３命令は rax を書き換えないので、最後の文の値が返り値として残ります。「領域を使い終える」は、メモリの内容を０に消すことではありません。その領域は後の処理で再利用され、今回の関数の変数としては使えなくなります。</p>
+      <p class="note">ここで実装するのは、生成した main の実行中に使うローカル変数です。外部へ公開するシンボル a を作るわけではないため、第６章のリンカーが a の場所を探すことはありません。Ｃと同じ型やスコープの規則をすべて備えた実装でもありません。</p>
+    </section>
+    <section id="hands-on" aria-labelledby="hands-on-title">
+      <h2 id="hands-on-title"><span class="number">３</span>ハンズオン</h2>
+      <h3>準備：変数を扱うコンパイラを作る</h3>
+      <p>第１章と同じリナックスのコンテナ内で実行します。まだ入っていなければ、マック側のリポジトリで <code>make -f docker.mk shell</code> を実行します。その後、コンテナ内で次を実行してください。</p>
+      <pre><code>cd /workspace/textbook/new/labs/ch07
+gcc -std=c11 -Wall -Wextra -o /tmp/ch07-compiler compiler.c</code></pre>
+      <p>１行目は実験用フォルダへの移動、２行目はコンパイラ自身のビルドです。<code>-std=c11</code> はＣの規格、<code>-Wall -Wextra</code> は警告、<code>-o</code> は出力先の指定です。エラーなく完了してから次へ進みます。以前の章のファイルは変更しません。</p>
+      <h3>実験１：名前が保存命令になるところを見る</h3>
+      <p><strong>実行前に：</strong><code>a=3; b=5; a+b*2;</code> の最後の値を予想し、a と b が何バイト手前の場所を使うかメモしてください。</p>
+      <pre><code>/tmp/ch07-compiler 'a=3; b=5; a+b*2;' &gt; /tmp/ch07-result.s
+echo $?
+cat /tmp/ch07-result.s</code></pre>
+      <p>引用符で文の列を一つの引数にしています。付けないと、セミコロンをシェルがコマンドの区切りとして扱ってしまいます。<code>&gt;</code> はコンパイラの標準出力をファイルへ保存し、<code>cat</code> はその内容を表示します。ここでの終了状態０はコンパイラの成功で、式の計算結果ではありません。</p>
+      <p>表示の中から、a に書く命令 <code>mov [rbp - 8], rax</code> と、後から読む命令 <code>mov rax, [rbp - 8]</code> を探します。b に対応する１６も見つけてください。続いて生成されたプログラムを動かします。</p>
+      <pre><code>gcc -o /tmp/ch07-program /tmp/ch07-result.s
+/tmp/ch07-program
+echo $?</code></pre>
+      <p>１行目はアセンブル・リンク、２行目は生成プログラムの実行、３行目はその終了状態の表示です。ビルドに失敗した場合は先へ進まず、エラーを確認します。</p>
+      <details><summary>実行後に開く：結果と保存場所</summary><p>１３が表示されます。a と b は別の場所に保存され、最後の計算ではそこから３と５を読みます。途中で rax の内容が変わっても、メモリの a と b は、書き込み命令が出ない限りそのままです。</p></details>
+      <h3>実験２：値のコピーと、名前のつながりを区別する</h3>
+      <p>次は <code>a=3; b=a; a=9; b;</code> です。最後の b は３でしょうか、９でしょうか。<code>b=a</code> が、何を読み、どこへ書く命令になるかを根拠に考えます。</p>
+      <pre><code>/tmp/ch07-compiler 'a=3; b=a; a=9; b;' &gt; /tmp/ch07-result.s
+cat /tmp/ch07-result.s
+gcc -o /tmp/ch07-program /tmp/ch07-result.s
+/tmp/ch07-program
+echo $?</code></pre>
+      <details><summary>実行後に開く：コピーしたのは、その時点の値</summary><p>結果は３です。b=a は a の場所から現在の３を読み、b の場所へ保存します。b が永久に a を参照する仕組みではありません。後の a=9 は a の場所だけを上書きするため、b に保存した３は残ります。</p></details>
+      <p>同じ手順で <code>a=3; a=a+4; a;</code> も試します。入力を変えるたびに生成・アセンブルとリンク・実行を行ってください。古い実行ファイルを動かしても、新しい入力の結果にはなりません。</p>
+      <details><summary>再代入の結果を照合する</summary><p>７です。右辺で古い３を読み、４を足した結果を、同じ a の場所へ書き戻しています。</p></details>
+      <h3>実験３：変数の値と、一時保存の値を追う</h3>
+      <p><code>a=3; b=5; (a+b)*(a+2);</code> を実験２と同じ手順で生成してください。実行前に、生成された <code>push rax</code> が何を保存しているかを追い、式の計算中に a へ書き込む命令があるか確認します。</p>
+      <p>特に、左の a+b の結果を保存した後、右の a+2 を求めるときの状態を考えます。rsp は動きますが、a の位置を表す式は変わるでしょうか。予想ができたらビルド・実行します。</p>
+      <details><summary>実行後に開く：８を待たせたまま、a から３を読める</summary><p>結果は４０です。左側の８を一時保存している間も、a は rbp−8 の場所に３を保持しています。右側はそこから３を読み、２を足して５になります。最後に保存した８と掛けます。式の中で行う push は変数領域より外側なので、a の３を上書きしません。</p></details>
+      <h3>実験４：代入前の読み出しを拒否する</h3>
+      <pre><code>/tmp/ch07-compiler 'a=a+1;' &gt; /tmp/ch07-rejected.s
+echo $?
+cat /tmp/ch07-rejected.s</code></pre>
+      <p>今回は意図した失敗です。エラーは標準エラー出力へ出るので画面に見えます。標準出力のファイルは作られますが、アセンブリは出力されません。拒否されたファイルのビルドへは進みません。</p>
+      <details><summary>実行後に開く：保存領域があることと、値が決まっていることは別</summary><p>右辺の a がまだ代入前なので、終了状態は１です。領域を確保する命令があっても初期値が決まるわけではありません。一方、<code>a=0; a=a+1; a;</code> は有効で、生成されたプログラムは１を返します。同じ１でも、前者はコンパイラのエラー、後者は生成プログラムの値です。</p></details>
+      <h3>実験５：異なる変数が、同じ場所を使ったら？</h3>
+      <p>これは、場所の対応を意図的に壊す実験です。コンパイラのソースは変えず、まず正常な <code>a=3; b=5; a+b*2;</code> のアセンブリを生成します。</p>
+      <pre><code>/tmp/ch07-compiler 'a=3; b=5; a+b*2;' &gt; alias.s</code></pre>
+      <p>今回は、マック側のエディタでも編集できるよう、共有しているリポジトリ内に生成します。マック側で <code>textbook/new/labs/ch07/alias.s</code> を開き、<code>[rbp - 16]</code> を２か所とも <code>[rbp - 8]</code> に変更して保存してください。これは実験で作るファイルで、教材の compiler.c とは別です。変更後、a と b がどの値を読むか予想してから、コンテナ内で次を実行します。</p>
+      <pre><code>gcc -o /tmp/ch07-alias alias.s
+/tmp/ch07-alias
+echo $?</code></pre>
+      <details><summary>実行後に開く：名前が違っても、命令が同じ場所を指せば上書きされる</summary><p>結果は１５です。b=5 のつもりの命令が a の場所を５で上書きし、最後の a と b の読み出しも、ともにそこから５を読みます。ＣＰＵは元の変数名を区別して守ってくれるわけではありません。別々の変数を別々の場所へ対応付けることが、生成側の責任です。</p></details>
+      <p>確認用の <a href="labs/ch07/check.sh">検証スクリプト</a>は、コンテナ内の第７章フォルダで <code>bash check.sh</code> と実行できます。compiler.c から一時フォルダに生成して検証するので、実験５の alias.s は使いません。</p>
+    </section>
+    <section id="check" aria-labelledby="check-title">
+      <h2 id="check-title"><span class="number">４</span>理解チェック</h2>
+      <h3>sub rsp, 208 を実行すれば、a は０になるか？</h3>
+      <details><summary>解説を読む</summary><p>なりません。保存領域を使うために rsp を移しただけで、値を書き込んでいません。今回のコンパイラが代入前の読み出しを拒否するのは、この未確定の値に依存した実験にしないためです。</p></details>
+      <h3>push rax の後でも、同じ rbp−8 で a を読めるのはなぜか？</h3>
+      <details><summary>解説を読む</summary><p>push が変えるのは rsp であり、本文の rbp は固定しているからです。a は先に確保した変数領域にあり、一時保存はそれより小さいアドレス側を使います。</p></details>
+      <h3>mov rax, [rbp - 8] は、rbp から８を引いた値を rax に入れる命令か？</h3>
+      <details><summary>解説を読む</summary><p>いいえ。rbp−8 をアドレスとして、その場所のメモリに入っている値を読みます。角括弧がメモリを読むことを示しています。rbp 自体も変わりません。</p></details>
+      <h3>なぜ ret の前に、rsp と rbp を戻すのか？</h3>
+      <details><summary>解説を読む</summary><p>rsp が変数領域を指したままだと、ret が正しい戻りアドレスを取り出せません。また、呼び出し側の rbp を壊さないよう元の値も復元します。結果の rax はそのまま残し、使った保存領域と基準だけを片付けます。</p></details>
+      <h3>コンパイラ内の assigned 配列に、a の値３が入るのか？</h3>
+      <details><summary>解説を読む</summary><p>入りません。この配列には、代入済みかどうかだけが入ります。実行中の３は、生成された保存命令によって、そのプログラムのスタックに書き込まれます。コンパイラの実行時と、生成プログラムの実行時を区別します。</p></details>
+      <h3>今回の８バイトの変数は、Ｃの int と同じ仕様か？</h3>
+      <details><summary>解説を読む</summary><p>違います。本章の変数は教材独自の８バイトの保存場所です。生成する main の返り値は既存環境の int の規則に従い、シェルではさらに下位８ビットの終了状態を観察します。大きい値をそのまま画面に表示する仕組みではありません。ゼロ除算や６４ビットを超える計算への対応も、第５章から追加していません。</p></details>
+      <div class="sources"><h3>参照先</h3><p><a href="https://www.sigbus.info/compilerbook">原書「低レイヤを知りたい人のためのＣコンパイラ作成入門」</a>のローカル変数とスタックの章に対応します。本章では代入を文に限定し、代入前の読み出しを拒否する検査を加えています。式の結果を rax に残す約束は第５章から継続します。</p><p>教材のリナックス環境で、代入・再代入・変数の読み出し、四則演算、一時保存、入力の拒否を確認しています。</p></div>
+    </section>
+    <footer><nav class="chapter-navigation" aria-label="前後の章"><a class="chapter-prev" href="separate-compilation.html" rel="prev">第６章　分割コンパイルとリンク</a><a class="chapter-next" href="function-calls.html" rel="next">第８章　関数呼び出し</a></nav></footer>
+  </main>
+</body>
+</html>

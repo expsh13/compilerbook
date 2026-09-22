@@ -20,6 +20,16 @@
         <a href="machine-code.html">第１章　機械語とアセンブラ</a>
         <a href="minimal-compiler.html">第２章　最小のコンパイラ</a>
         <a href="tokenization.html">第３章　字句解析</a>
+        <a href="parsing.html">第４章　構文解析</a>
+      <a href="code-generation.html">第５章　式のコード生成</a>
+      <a href="separate-compilation.html">第６章　分割コンパイルとリンク</a>
+      <a href="local-variables.html">第７章　ローカル変数とスタック</a>
+      <a href="function-calls.html">第８章　関数呼び出し</a>
+      <a href="integer-representation.html">第９章　整数の表現</a>
+      <a href="pointers-and-strings.html">第１０章　ポインタと文字列</a>
+      <a href="executable-image.html">第１１章　実行イメージと初期化</a>
+      <a href="linking-libraries.html">第１２章　スタティックリンクとダイナミックリンク</a>
+      <a href="type-declarations.html">第１３章　Ｃの型の構文</a>
       </nav>
       <a class="previous" href="../index.html">以前の教科書を読む</a>
     </aside>
@@ -30,7 +40,7 @@
       <h1>目次</h1>
       <p class="lead">実行される命令から出発し、文字列を解析してコードを生成する仕組みへ。その後、変数・関数・型と、プログラムを支える実行環境を学びます。</p>
       <p>各章は「この章で扱う問い」「この章の理論」「ハンズオン」「理解チェック」の４部構成です。一章で確かめる対象を絞り、具体的な観察と理論を結びつけて進みます。</p>
-      <p>序章と第１〜３章は作成済みです。第４章以降は作成予定で、学習を進めながら範囲や分け方を調整します。</p>
+      <p>序章と第１〜１３章は作成済みです。学習を進めながら、説明や実験を更新していきます。</p>
     </header>
     <section aria-labelledby="process-title">
       <h2 id="process-title">処理の全体像と、各章の位置</h2>
@@ -90,43 +100,43 @@
         <p>ソースコードの文字列から、意味のある単位をどう取り出すか？</p>
       </div>
       <div class="chapter-entry">
-        <h3 id="chapter-4">第４章　構文解析 <small>作成予定</small></h3>
+        <h3 id="chapter-4"><a href="parsing.html">第４章　構文解析</a></h3>
         <p>演算子の優先順位や括弧を、どう構造として表すか？</p>
       </div>
       <div class="chapter-entry">
-        <h3 id="chapter-5">第５章　式のコード生成 <small>作成予定</small></h3>
+        <h3 id="chapter-5"><a href="code-generation.html">第５章　式のコード生成</a></h3>
         <p>式の構造から、正しい順序で計算する命令をどう作るか？</p>
       </div>
       <div class="chapter-entry">
-        <h3 id="chapter-6">第６章　分割コンパイルとリンク <small>作成予定</small></h3>
+        <h3 id="chapter-6"><a href="separate-compilation.html">第６章　分割コンパイルとリンク</a></h3>
         <p>別々に作ったコードは、どう一つのプログラムになるか？</p>
       </div>
       <div class="chapter-entry">
-        <h3 id="chapter-7">第７章　ローカル変数とスタック <small>作成予定</small></h3>
+        <h3 id="chapter-7"><a href="local-variables.html">第７章　ローカル変数とスタック</a></h3>
         <p>変数の値はどこに置かれ、どう読み書きされるか？</p>
       </div>
       <div class="chapter-entry">
-        <h3 id="chapter-8">第８章　関数呼び出し <small>作成予定</small></h3>
+        <h3 id="chapter-8"><a href="function-calls.html">第８章　関数呼び出し</a></h3>
         <p>引数・戻り値・実行の続きは、どう受け渡されるか？</p>
       </div>
       <div class="chapter-entry">
-        <h3 id="chapter-9">第９章　整数の表現 <small>作成予定</small></h3>
+        <h3 id="chapter-9"><a href="integer-representation.html">第９章　整数の表現</a></h3>
         <p>ビット列はどう整数になり、計算にはどんな限界があるか？</p>
       </div>
       <div class="chapter-entry">
-        <h3 id="chapter-10">第１０章　ポインタと文字列 <small>作成予定</small></h3>
+        <h3 id="chapter-10"><a href="pointers-and-strings.html">第１０章　ポインタと文字列</a></h3>
         <p>アドレスを使って、データをどう扱うか？</p>
       </div>
       <div class="chapter-entry">
-        <h3 id="chapter-11">第１１章　実行イメージと初期化 <small>作成予定</small></h3>
+        <h3 id="chapter-11"><a href="executable-image.html">第１１章　実行イメージと初期化</a></h3>
         <p>実行前のファイルが、どうメモリ上の状態になるか？</p>
       </div>
       <div class="chapter-entry">
-        <h3 id="chapter-12">第１２章　スタティックリンクとダイナミックリンク <small>作成予定</small></h3>
+        <h3 id="chapter-12"><a href="linking-libraries.html">第１２章　スタティックリンクとダイナミックリンク</a></h3>
         <p>外部のコードを、いつ・どう結びつけるか？</p>
       </div>
       <div class="chapter-entry">
-        <h3 id="chapter-13">第１３章　Ｃの型の構文 <small>作成予定</small></h3>
+        <h3 id="chapter-13"><a href="type-declarations.html">第１３章　Ｃの型の構文</a></h3>
         <p>複雑な宣言は、どう読んで構造化するか？</p>
       </div>
     </section>

@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="別々のソースからオブジェクトファイルを作り、シンボル解決と再配置によって結び付く過程を観察する。">
+  <title>第６章　分割コンパイルとリンク｜実験で理解するコンパイラ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">本文へ移動</a>
+  <details class="sidebar"><summary>目次</summary><aside>
+    <p class="brand">実験で理解する<br>コンパイラ</p><p class="edition">新しい教科書</p>
+    <nav aria-label="本の目次">
+      <a href="contents.html">目次　全体の章立て</a><a href="index.html">序章　本の構成</a>
+      <a href="machine-code.html">第１章　機械語とアセンブラ</a><a href="minimal-compiler.html">第２章　最小のコンパイラ</a>
+      <a href="tokenization.html">第３章　字句解析</a><a href="parsing.html">第４章　構文解析</a>
+      <a href="code-generation.html">第５章　式のコード生成</a>
+      <a href="separate-compilation.html" aria-current="page">第６章　分割コンパイルとリンク</a>
+      <a href="local-variables.html">第７章　ローカル変数とスタック</a>
+      <a href="function-calls.html">第８章　関数呼び出し</a>
+      <a href="integer-representation.html">第９章　整数の表現</a>
+      <a href="pointers-and-strings.html">第１０章　ポインタと文字列</a>
+      <a href="executable-image.html">第１１章　実行イメージと初期化</a>
+      <a href="linking-libraries.html">第１２章　スタティックリンクとダイナミックリンク</a>
+      <a href="type-declarations.html">第１３章　Ｃの型の構文</a>
+    </nav>
+    <nav class="contents" aria-label="この章の目次"><a href="#question">１　この章で扱う問い</a><a href="#theory">２　この章の理論</a><a href="#hands-on">３　ハンズオン</a><a href="#check">４　理解チェック</a></nav>
+    <a class="previous" href="../index.html">以前の教科書を読む</a>
+  </aside></details>
+  <main id="main">
+    <header><p class="eyebrow">第６章</p><h1>分割コンパイルとリンク</h1><p class="lead">別々に作った部品の「この関数を使いたい」と「ここにある」を結び付ける。</p><p>前章では、自作コンパイラの出力を gcc に渡して実行ファイルにしました。その一回のコマンドに隠れていた、アセンブルとリンクを分けて観察します。今回は自作コンパイラに機能を足すのではなく、その出力側を支えている既存の道具を調べます。</p></header>
+    <section id="question" aria-labelledby="question-title">
+      <h2 id="question-title"><span class="number">１</span>この章で扱う問い</h2>
+      <p><strong>別のファイルにある関数の場所が、まだわからないのに、呼び出す側の機械語を作れるのはなぜか？</strong></p>
+      <p>一つのプログラムを複数のファイルに分けると、呼ぶ側と呼ばれる側を別々に作れます。その時点では相手の最終的な位置が決まっていません。そこで「後で結び付けるための情報」を機械語と一緒に残します。この情報を使って部品をつなぐ工程がリンクです。</p>
+      <p>第１章の <code>call</code> と <code>ret</code>、第２章の gcc の役割が前提です。本章では、Ｃで書いた呼び出し側と、アセンブリで書いた小さな関数を結びます。引数の配置など、関数呼び出しの詳しい規則は第８章で扱います。</p>
+    </section>
+    <section id="theory" aria-labelledby="theory-title">
+      <h2 id="theory-title"><span class="number">２</span>この章の理論</h2>
+      <h3>まず、二つの部品を見る</h3>
+      <p>呼び出す側の <a href="labs/ch06/main.c">main.c</a> は、<code>answer</code> という関数を呼び、受け取った値を返します。</p>
+      <pre><code>#include "answer.h"
+
+int main(void) {
+    return answer();
+}</code></pre>
+      <p><a href="labs/ch06/answer.h">answer.h</a> の中心は、次の１行です。</p>
+      <pre><code>int answer(void);</code></pre>
+      <p>これは関数の<strong>宣言</strong>です。「名前は answer、引数はなく、int の値を返す」とＣコンパイラへ知らせます。末尾がセミコロンで、計算をする本体はありません。<code>#include</code> は、コンパイルの前処理でヘッダの内容を取り込みます。関数の機械語を取り込む指示ではありません。</p>
+      <p>ヘッダの <code>#ifndef</code> から <code>#endif</code> は、同じ内容が繰り返し取り込まれるのを防ぐ囲いです。今回注目するのは、関数の名前と型を伝える宣言の役割です。</p>
+      <p>呼ばれる側の <a href="labs/ch06/answer.s">answer.s</a> には、その関数の<strong>定義</strong>、つまり実際に動く本体を置きます。主要な部分は次のとおりです。</p>
+      <pre><code>.intel_syntax noprefix
+.text
+.globl answer
+answer:
+    mov rax, 14
+    ret</code></pre>
+      <p><code>answer:</code> は、この位置に付ける名前です。<code>.globl answer</code> は、その名前を別の部品からも参照できるようにします。関数が呼ばれると、<code>mov</code> が返す値１４を用意し、<code>ret</code> が呼び出した側の続きへ実行を戻します。Ｃの <code>int</code> の返り値としては下位３２ビットの <code>eax</code> が使われ、この例では１４になります。</p>
+      <p>実際のファイルには、関数であることを記す <code>.type</code> と、関数のバイト数を記す <code>.size</code> もあります。<code>.-answer</code> は現在位置から関数の開始位置を引いた長さです。末尾の <code>.note.GNU-stack</code> は実行可能なスタックを要求しないという情報です。これらはＣＰＵが実行する計算命令ではなく、ツールが使う付随情報です。</p>
+      <h3>オブジェクトファイルという、結合前の形で止める</h3>
+      <p><strong>分割コンパイル</strong>では、ソースを別々に処理して<strong>オブジェクトファイル</strong>を作り、それらを後でリンクします。本章の <code>.o</code> は、機械語だけでなく、定義した名前、外部に求める名前、後で調整する箇所などを持つファイルです。そのまま起動して使う実行ファイルではありません。</p>
+      <figure class="concept-figure"><figcaption><strong>図１　二つの経路が、リンクで合流する</strong><span>矢印はファイルの変換・結合を表します。この段階では answer の命令はまだ実行しません。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 365" role="img" aria-labelledby="link-flow-title link-flow-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="link-flow-title">Ｃとアセンブリを別々にオブジェクトにし、リンクする流れ</title><desc id="link-flow-desc">main.cはanswer.hの宣言を読んでコンパイル・アセンブルされmain.oになる。answer.sはアセンブルされanswer.oになる。二つをリンカーと起動用の部品などで結合して実行ファイルを作る。</desc>
+          <g fill="#e9eee5" stroke="#355d4c"><rect x="20" y="15" width="320" height="65" rx="5"/><rect x="420" y="15" width="320" height="65" rx="5"/><rect x="20" y="140" width="320" height="65" rx="5"/><rect x="420" y="140" width="320" height="65" rx="5"/><rect x="180" y="285" width="400" height="60" rx="5"/></g>
+          <g text-anchor="middle"><text x="180" y="42">main.c ＋ answer.h の宣言</text><text x="580" y="52">answer.s</text><text x="180" y="111" class="diagram-small">↓ Ｃのコンパイル・アセンブル</text><text x="580" y="111" class="diagram-small">↓ アセンブル</text><text x="180" y="168">main.o</text><text x="180" y="190" class="diagram-small">answer を使いたい</text><text x="580" y="168">answer.o</text><text x="580" y="190" class="diagram-small">answer はここにある</text><text x="380" y="255">↓ リンク（起動用の部品なども加わる）</text><text x="380" y="322">実行ファイル</text></g>
+          <path d="M180 208V226H580V208M380 226V235" fill="none" stroke="#355d4c" stroke-width="2"/>
+        </svg></div>
+        <p class="figure-takeaway">Ｃとアセンブリという書き方の違いがあっても、対応する機械語・ファイル形式・呼び出し規則にそろえば、部品としてつなげられます。</p>
+      </figure>
+      <p><code>gcc -c main.c</code> の <code>-c</code> は、リンクを行わずオブジェクトファイルで止める指定です。Ｃからのコンパイルとアセンブルは行います。一方、<code>gcc -c answer.s</code> は、すでにアセンブリなのでアセンブルを行います。<code>-o</code> は出力名の指定で、実行ファイルにするという意味ではありません。</p>
+      <h3>シンボルは、名前と場所を結び付ける情報</h3>
+      <p><strong>シンボル</strong>は、関数などの名前を、位置や属性と結び付けて扱うための情報です。オブジェクトファイルの<strong>シンボル表</strong>を見ると、「この部品が定義している名前」と「使うが、この部品内では未定義の名前」を区別できます。</p>
+      <p><code>main.o</code> は <code>main</code> を定義していますが、<code>answer</code> の本体は持ちません。<code>answer.o</code> は逆に、<code>answer</code> の本体を持ちます。リンカーはこれらを照合して、呼び出し側が求めている <code>answer</code> をどの定義につなぐか決めます。この仕事を<strong>シンボル解決</strong>と呼びます。</p>
+      <figure class="concept-figure"><figcaption><strong>図２　宣言・参照・定義は、違う役割</strong><span>同じ answer という名前が、各段階で違う情報と結び付いています。</span></figcaption>
+        <div class="table-scroll"><table><thead><tr><th>置き場所</th><th>持っている情報</th><th>誰が使うか</th></tr></thead><tbody>
+          <tr><td>answer.h</td><td>引数なし、int を返すという宣言</td><td>Ｃコンパイラが呼び出し側を作るときに使う。</td></tr>
+          <tr><td>main.o</td><td>answer という名前への未解決の参照</td><td>リンカーが接続先を探す。</td></tr>
+          <tr><td>answer.o</td><td>answer の定義と、その部品内での位置</td><td>リンカーが参照先として結び付ける。</td></tr>
+        </tbody></table></div>
+        <p class="figure-takeaway">宣言を書いても本体は生まれません。逆に、呼び出し側を作る段階で本体のソースまで読む必要もありません。</p>
+      </figure>
+      <p>本章の通常のＣの名前について、リンカーは主にシンボル名を照合します。ヘッダに書いた型と、アセンブリの実装が本当に一致するかまで保証するわけではありません。名前が合うことに加えて、引数や返り値の受け渡し規則も一致させる必要があります。</p>
+      <h3>名前が見つかったら、参照する箇所を調整する</h3>
+      <p>定義が見つかっても、まだ仕事が残っています。リンカーは部品の命令やデータを配置し、その配置に合わせて、参照を含む箇所の数値を調整します。この処理を<strong>再配置</strong>と呼びます。</p>
+      <p>本章の <code>call</code> は、次の命令の位置から呼び出し先までの距離を機械語に持つ形です。<code>main.o</code> を作る時点では、別の部品にある <code>answer</code> までの距離はわかりません。そこでアセンブラは、命令と一緒に「この位置の数値を、answer の位置に基づいて調整してほしい」という<strong>再配置情報</strong>を残します。</p>
+      <figure class="concept-figure"><figcaption><strong>図３　呼び出し命令に残した、後で決める箇所</strong><span>名前を探す処理と、命令の数値を調整する処理を分けて見ます。</span></figcaption>
+        <div class="translation-flow">
+          <div class="flow-stage">main.o：call の機械語<small>距離は未確定。調整箇所と answer の名前を記録する</small></div>
+          <div class="flow-arrow">↓ シンボル解決</div>
+          <div class="flow-stage">answer.o の定義に結び付ける<small>どの answer を呼ぶかがわかる</small></div>
+          <div class="flow-arrow">↓ 配置に合わせて再配置</div>
+          <div class="flow-stage focus-stage">実行ファイル内の call<small>配置された answer へ届く距離が入る</small></div>
+        </div>
+        <p class="figure-takeaway">リンクはソースの文字列を連結する処理ではありません。機械語と、それに付随する名前・調整情報を使って部品を結びます。</p>
+      </figure>
+      <p>すべての参照が同じ形式とは限りません。ここでは自分たちの二つの部品の間の呼び出しに絞ります。共有ライブラリとの接続など、起動時や実行中まで残る処理は第１２章で扱います。</p>
+      <h3>部品が足りない場合と、重複する場合</h3>
+      <p><code>main.o</code> だけを渡すと、今回の <code>answer</code> の定義がなく、リンクは失敗します。典型的な表示が <code>undefined reference</code>、つまり「参照先の定義が見つからない」です。<code>.o</code> の段階で未定義の名前を持つこと自体は正常ですが、今回の実行ファイルを作るにはその相手が必要です。</p>
+      <p>反対に、同じ外部向けの関数 <code>answer</code> を定義した通常のオブジェクトを二つとも渡すと、<code>multiple definition</code>、つまり「定義の重複」で失敗します。今回は先勝ちで選ぶ仕組みではありません。ライブラリや特別なシンボル属性の規則は、この実験には持ち込みません。</p>
+      <h3>前章とのつながり</h3>
+      <p>第５章の <code>gcc -o 実行ファイル アセンブリ.s</code> も、内部ではアセンブルの後にリンクしていました。自作したのは式を命令へ変える部分であり、リンカーまで自作していたわけではありません。また、gcc はリンク時に、通常のＣプログラムを起動・終了するための部品やライブラリも手配します。自分の main だけが実行ファイルの全体ではない、という点も重要です。</p>
+      <p class="note">今回は自作言語に関数を追加しません。Ｃの呼び出し側は既存のコンパイラに任せ、単純な返り値だけを持つアセンブリの関数と結びます。リンクを行う時点では関数を実行せず、１４という返り値を計算して接続先を選ぶこともありません。</p>
+    </section>
+    <section id="hands-on" aria-labelledby="hands-on-title">
+      <h2 id="hands-on-title"><span class="number">３</span>ハンズオン</h2>
+      <h3>準備：今回のファイルへ移動する</h3>
+      <p>第１章と同じリナックスのコンテナ内で実行します。まだ入っていなければ、マック側のリポジトリで <code>make -f docker.mk shell</code> を実行してください。その後、コンテナ内で次を実行します。</p>
+      <pre><code>cd /workspace/textbook/new/labs/ch06</code></pre>
+      <p>用意したファイルは <a href="labs/ch06/main.c">main.c</a>、<a href="labs/ch06/answer.h">answer.h</a>、<a href="labs/ch06/answer.s">answer.s</a>、交換用の <a href="labs/ch06/answer42.s">answer42.s</a> です。最後のファイルは、同じ名前の関数が４２を返す実装です。マック側から編集するときは、リポジトリ内の同じファイルを開きます。</p>
+      <h3>実験１：相手を渡さずに、呼び出し側を作れるか</h3>
+      <p><strong>実行前に：</strong>次の１行は answer.s を指定していません。成功するでしょうか。<code>-c</code> がどの工程で止める指定かを根拠に予想します。</p>
+      <pre><code>gcc -std=c11 -Wall -Wextra -O0 -c main.c -o /tmp/ch06-main.o
+echo $?
+gcc -c answer.s -o /tmp/ch06-answer.o
+nm /tmp/ch06-main.o /tmp/ch06-answer.o</code></pre>
+      <p>１行目は呼び出す側、３行目は呼ばれる側を、それぞれオブジェクトにします。<code>-O0</code> は最適化を抑えて観察しやすくする指定です。２行目は直前の処理の終了状態を表示します。<code>nm</code> はオブジェクトなどのシンボルを表示する道具です。実行ファイルのように中の関数を動かす道具ではありません。</p>
+      <details><summary>実行後に開く：未定義でも、部品は作れる</summary><p>１行目は成功し、終了状態は０です。<code>nm</code> の主要な表示は次のようになります。表示の空白などは環境によって異なります。</p>
+        <pre><code>/tmp/ch06-main.o:
+                 U answer
+0000000000000000 T main
+
+/tmp/ch06-answer.o:
+0000000000000000 T answer</code></pre>
+        <p><code>U</code> はそのファイル内で未定義、<code>T</code> はコードの領域で定義された外部向けのシンボルを表します。両方に０があっても同じ実行時アドレスという意味ではありません。この段階の値は、それぞれの部品のコード領域内の位置です。</p>
+      </details>
+      <h3>実験２：二つをリンクして動かす</h3>
+      <pre><code>gcc /tmp/ch06-main.o /tmp/ch06-answer.o -o /tmp/ch06-program
+/tmp/ch06-program
+echo $?</code></pre>
+      <p>１行目は、作成済みのオブジェクトをリンクします。Ｃのソースをコンパイルし直しているのではありません。リンク成功を確認してから２行目で起動し、３行目で終了状態を表示します。</p>
+      <details><summary>実行後に開く：返り値が渡る経路</summary><p>１４が表示されます。起動用のコードが main を呼び、main が answer を呼び、answer の１４が main の返り値になります。その後、終了処理を経て終了状態としてシェルに渡ります。表示したのは最後の <code>echo</code> であり、answer に表示処理はありません。</p></details>
+      <h3>実験３：再配置の前後を見る</h3>
+      <pre><code>objdump -dr -Mintel /tmp/ch06-main.o
+objdump -d -Mintel --disassemble=main /tmp/ch06-program</code></pre>
+      <p><code>objdump</code> はファイルの中身を調べる道具です。<code>-d</code> は機械語を命令表記へ戻して表示する逆アセンブル、<code>-r</code> は再配置情報の表示、<code>-Mintel</code> は命令の表示を本書と同じ記法にする指定です。２行目は、リンク後の main の命令だけに表示を絞っています。</p>
+      <p><strong>観察する場所：</strong>１行目の出力から <code>call</code> と、その近くの <code>answer</code> を探します。次に２行目の <code>call</code> の行と比較します。ほかの命令を全部解読する必要はありません。</p>
+      <details><summary>観察後に開く：命令に付随した調整情報</summary><p>検証環境では、リンク前に次の表示がありました。</p>
+        <pre><code>8: e8 00 00 00 00   call d &lt;main+0xd&gt;
+       9: R_X86_64_PLT32 answer-0x4</code></pre>
+        <p><code>e8</code> はこの call の命令コードで、続く４バイトが距離の欄です。この時点では０が置かれています。下の行は、９という位置の欄を answer に基づいて調整する再配置情報です。<code>R_X86_64_PLT32</code> は調整方式の名前、<code>-0x4</code> は距離を求める基準を合わせるための補正で、answer の返り値から４を引く指示ではありません。</p>
+        <p>リンク後は、検証環境で次のようになりました。</p>
+        <pre><code>1131: e8 02 00 00 00   call 1138 &lt;answer&gt;</code></pre>
+        <p>この数値は１６進表記です。call の次の命令は <code>1136</code>、answer は <code>1138</code> なので、距離の欄に２が入っています。アドレスや周囲の命令は環境で変わります。数字の一致ではなく、リンク前の調整情報と、リンク後に answer を指す call の対応を確認してください。</p>
+      </details>
+      <h3>実験４：呼ぶ側を作り直さず、返す値を変える</h3>
+      <p>今度は４２を返す部品に交換します。<code>main.c</code> はコンパイルし直しません。実験１で作った <code>main.o</code> をそのまま使えるか、予想します。</p>
+      <pre><code>gcc -c answer42.s -o /tmp/ch06-answer42.o
+gcc /tmp/ch06-main.o /tmp/ch06-answer42.o -o /tmp/ch06-program42
+/tmp/ch06-program42
+echo $?</code></pre>
+      <details><summary>実行後に開く：接続する名前は同じ</summary><p>結果は４２です。ファイル名は answer42.s ですが、中のシンボル名は answer のままです。main.o は「answer を呼びたい」という情報を持つため、新しい定義にもつながります。関数名と型などの取り決めを変えず本体だけを変えたので、呼び出し側を作り直す必要がありませんでした。ただし、新しい部品を使うための再リンクは必要です。</p></details>
+      <p>以前の <code>/tmp/ch06-program</code> を動かすと、今でも１４を返します。新しいファイルを作っただけで、すでにリンク済みの古い実行ファイルが書き換わることはありません。</p>
+      <h3>実験５：部品を省く、二つとも渡す</h3>
+      <p>次は、意図的に失敗させる実験です。最初は定義を一つも渡さず、その後は二つ渡します。それぞれ、コンパイル・リンク・実行のどの段階で止まるか予想してください。</p>
+      <pre><code>gcc /tmp/ch06-main.o -o /tmp/ch06-missing
+echo $?
+
+gcc /tmp/ch06-main.o /tmp/ch06-answer.o /tmp/ch06-answer42.o -o /tmp/ch06-duplicate
+echo $?</code></pre>
+      <p>エラーメッセージの中の <code>answer</code> を探してください。失敗したコマンドの直後の <code>echo $?</code> は、リンクを手配した gcc の終了状態を表示します。生成プログラムの終了状態ではありません。ここでは失敗するので、出力先を起動する手順はありません。</p>
+      <details><summary>実行後に開く：未定義と重複</summary><p>最初は answer への <code>undefined reference</code>、次は answer の <code>multiple definition</code> が出て、どちらも終了状態は０以外になります。最初の失敗はヘッダ不足ではありません。宣言を読んで main.o を作る工程は成功しており、リンクに渡した本体が不足しています。二つ目は、どちらも同じ名前を定義する部品を直接渡したことが原因です。</p></details>
+      <p>全体を確認する <a href="labs/ch06/check.sh">検証スクリプト</a>も用意しています。第６章のフォルダで <code>bash check.sh</code> を実行すると、結果、シンボル、再配置情報、想定した二つのリンクエラーを確認します。教材ファイルを変更した場合は、元の内容に戻してから実行してください。</p>
+    </section>
+    <section id="check" aria-labelledby="check-title">
+      <h2 id="check-title"><span class="number">４</span>理解チェック</h2>
+      <h3>answer.h を読んだのに、main.o だけではリンクできないのはなぜか？</h3>
+      <details><summary>解説を読む</summary><p>ヘッダには名前と型の宣言があるだけで、関数本体がないからです。宣言は呼び出し側のコンパイルに、本体の定義はリンクで参照先を結び付けるために必要です。</p></details>
+      <h3>nm の U answer は、その時点でビルド失敗を意味するか？</h3>
+      <details><summary>解説を読む</summary><p>いいえ。そのオブジェクト内に定義がないことを示すだけです。後で別の部品の定義へつなぐための正常な中間状態でもあります。今回、適切な定義を渡さず実行ファイルを作ろうとするとリンクが失敗します。</p></details>
+      <h3>シンボル解決と再配置は、何が違うか？</h3>
+      <details><summary>解説を読む</summary><p>シンボル解決は「この参照をどの定義につなぐか」を決める仕事です。再配置は、その位置に合わせて参照箇所の数値を調整する仕事です。本章では、answer の定義を見つけ、その位置へ届くよう call の距離を調整しました。</p></details>
+      <h3>answer42.o を作ったのに、古い実行ファイルが１４を返すのはなぜか？</h3>
+      <details><summary>解説を読む</summary><p>新しいオブジェクトを作る処理と、実行ファイルへ組み込むリンクは別だからです。本章の古い実行ファイルには、すでに１４を返す本体が組み込まれています。新しいオブジェクトを使って再リンクし、その新しい実行ファイルを起動する必要があります。</p></details>
+      <h3>answer.s から .globl answer を外すと、名前が消えるのか？</h3>
+      <details><summary>解説を読む</summary><p><code>answer:</code> があるため名前そのものは残りますが、外部から参照できる定義ではなくなります。通常、nm では小文字の <code>t</code> として見えます。別のオブジェクトの main が求める外部向けの answer を満たせないため、今回のリンクは失敗します。</p></details>
+      <h3>リンクできれば、Ｃの宣言とアセンブリの実装の型も正しいか？</h3>
+      <details><summary>解説を読む</summary><p>保証されません。今回の通常のリンクでは、関数の型の整合性をＣコンパイラのように検査するわけではありません。名前の接続と、実行時に値を正しく受け渡せることは別の条件です。</p></details>
+      <div class="sources"><h3>参照先</h3><p><a href="https://gcc.gnu.org/onlinedocs/gcc/Overall-Options.html">ＧＣＣ公式：処理の段階と出力の指定</a>、<a href="https://sourceware.org/binutils/docs/binutils/nm.html">ＧＮＵ公式：シンボルを表示する nm</a>、<a href="https://sourceware.org/binutils/docs/ld/Overview.html">ＧＮＵ公式：リンカーの役割</a>。</p><p>教材のリナックス環境で、別々のオブジェクトの作成、シンボルと再配置の表示、１４と４２の実行結果、未定義・重複によるリンク失敗を検証しました。</p></div>
+    </section>
+    <footer><nav class="chapter-navigation" aria-label="前後の章"><a class="chapter-prev" href="code-generation.html" rel="prev">第５章　式のコード生成</a><a class="chapter-next" href="local-variables.html" rel="next">第７章　ローカル変数とスタック</a></nav></footer>
+  </main>
+</body>
+</html>

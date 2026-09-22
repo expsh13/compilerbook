@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ポインタの値と参照先を区別し、配列の要素幅、文字列の終端、アドレスを扱う命令を実験する。">
+  <title>第１０章　ポインタと文字列｜実験で理解するコンパイラ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">本文へ移動</a>
+  <details class="sidebar"><summary>目次</summary><aside>
+    <p class="brand">実験で理解する<br>コンパイラ</p><p class="edition">新しい教科書</p>
+    <nav aria-label="本の目次">
+      <a href="contents.html">目次　全体の章立て</a><a href="index.html">序章　本の構成</a>
+      <a href="machine-code.html">第１章　機械語とアセンブラ</a><a href="minimal-compiler.html">第２章　最小のコンパイラ</a>
+      <a href="tokenization.html">第３章　字句解析</a><a href="parsing.html">第４章　構文解析</a>
+      <a href="code-generation.html">第５章　式のコード生成</a><a href="separate-compilation.html">第６章　分割コンパイルとリンク</a>
+      <a href="local-variables.html">第７章　ローカル変数とスタック</a><a href="function-calls.html">第８章　関数呼び出し</a>
+      <a href="integer-representation.html">第９章　整数の表現</a>
+      <a href="pointers-and-strings.html" aria-current="page">第１０章　ポインタと文字列</a>
+      <a href="executable-image.html">第１１章　実行イメージと初期化</a>
+      <a href="linking-libraries.html">第１２章　スタティックリンクとダイナミックリンク</a>
+      <a href="type-declarations.html">第１３章　Ｃの型の構文</a>
+    </nav>
+    <nav class="contents" aria-label="この章の目次"><a href="#question">１　この章で扱う問い</a><a href="#theory">２　この章の理論</a><a href="#hands-on">３　ハンズオン</a><a href="#check">４　理解チェック</a></nav>
+    <a class="previous" href="../index.html">以前の教科書を読む</a>
+  </aside></details>
+  <main id="main">
+    <header><p class="eyebrow">第１０章</p><h1>ポインタと文字列</h1><p class="lead">値そのものではなく、値のある場所を渡す。</p><p>第７章では、コンパイラが変数の保存場所を決めました。今回は、その「場所」をプログラム内で扱います。同じ場所を指す二つの名前、連続した配列、文字列の終わりを、メモリと命令の対応から見ていきます。</p></header>
+    <section id="question" aria-labelledby="question-title">
+      <h2 id="question-title"><span class="number">１</span>この章で扱う問い</h2>
+      <p><strong>アドレスを渡すと、別の関数から元の値を変更できるのはなぜか？　文字列はどこまで読めばよいのか？</strong></p>
+      <p>第７章の <code>b=a;</code> は、その時点の値をコピーしました。今回は <code>p=&amp;a;</code> として、a の場所を渡します。コピーするものが値なのか場所なのかで、その後の変更の意味が変わります。</p>
+      <p>前提は第７章のメモリの読み書き、第８章の引数、第９章のビット幅です。本章は既存のＣコンパイラと短いアセンブリを使う観察実験です。自作言語へ型・配列・文字列の構文を一度に実装する章ではありません。最後に、自作コンパイラへ追加するなら何の情報が必要かを整理します。</p>
+    </section>
+    <section id="theory" aria-labelledby="theory-title">
+      <h2 id="theory-title"><span class="number">２</span>この章の理論</h2>
+      <h3>値、場所、その場所を入れる変数を分ける</h3>
+      <pre><code>int64_t a = 7;
+int64_t *p = &amp;a;
+int64_t *q = p;</code></pre>
+      <p><code>int64_t</code> は６４ビットの符号付き整数型です。<code>int64_t *p</code> は「その型の値を指すポインタを入れる変数 p」という宣言です。<strong>ポインタ</strong>は、対象の場所を指す値として使います。<code>&amp;a</code> は a のアドレスを得る式で、これを p に入れています。</p>
+      <p><code>*p</code> は、p が指す場所の対象を使う式です。<code>printf</code> などへ値として渡せば読み出し、<code>*p=42;</code> と書けばその場所へ４２を書き込みます。このように、場所を通して対象を使う操作を<strong>間接参照</strong>と呼びます。宣言中の＊と、式の中の＊では役割が違います。式でも二つの値の間に書く <code>a*b</code> は掛け算です。</p>
+      <figure class="concept-figure"><figcaption><strong>図１　p と q は、同じ a の場所を指す</strong><span>アドレスは説明用の仮の値です。箱は変数、箱の中はその変数に入っている値です。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 260" role="img" aria-labelledby="pointer-title pointer-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="pointer-title">ポインタ変数の場所と、その変数が指す場所の区別</title><desc id="pointer-desc">場所0x2000のpと場所0x3000のqには、どちらも0x1000が入っている。0x1000にはaの7がある。qを通して42を書くと同じaが42に変わり、pを通して読んでも42になる。</desc>
+          <defs><marker id="pointer-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#355d4c"/></marker></defs>
+          <g fill="#e9eee5" stroke="#355d4c"><rect x="35" y="55" width="225" height="55" rx="4"/><rect x="35" y="175" width="225" height="55" rx="4"/><rect x="475" y="115" width="245" height="65" rx="4"/></g>
+          <g text-anchor="middle"><text x="147" y="35">p の場所：0x2000</text><text x="147" y="90" class="diagram-code">0x1000</text><text x="147" y="155">q の場所：0x3000</text><text x="147" y="210" class="diagram-code">0x1000</text><text x="597" y="95">a の場所：0x1000</text><text x="597" y="156">７ → 書き込み後は４２</text><text x="597" y="215" class="diagram-small">*p も *q も同じ場所を使う</text></g>
+          <g fill="none" stroke="#355d4c" stroke-width="2" marker-end="url(#pointer-arrow)"><path d="M265 82H365V135H469"/><path d="M265 202H365V161H469"/></g>
+        </svg></div>
+      </figure>
+      <p>p 自身も変数なので、p を保存している場所があります。<code>&amp;p</code> はその場所、<code>p</code> は中に入っている「a を指す値」、<code>*p</code> は指した先の a です。これらを一つの「アドレス」という言葉だけでまとめず、何の場所かを区別します。</p>
+      <p><code>q=p</code> はアドレスの値をコピーします。a の７を別の整数変数へコピーしたわけではないため、q を通して書き込むと p から見える値も変わります。同じ対象へ複数の経路からアクセスできる状態を、<strong>別名参照</strong>と呼ぶことがあります。</p>
+      <h3>渡した場所を、機械語で読み書きする</h3>
+      <p>第８章と同じ規約で、第１引数は rdi、第２引数は rsi に入ります。ポインタを第１引数に渡すと、rdi は値７ではなく a のアドレスを持ちます。用意した関数の主要な命令は次のとおりです。</p>
+      <pre><code>read_value:
+    mov rax, [rdi]
+    ret
+
+write_value:
+    mov [rdi], rsi
+    ret</code></pre>
+      <p><code>read_value(p)</code> は、rdi が指す場所から８バイトを読んで rax で返します。<code>write_value(p,42)</code> は、rsi に渡された４２を、rdi が指す場所へ８バイト書きます。角括弧が、そのアドレスのメモリを使うことを示しています。write_value のＣ側の戻り値の型は <code>void</code> で、返り値は利用しません。</p>
+      <p>引数としてコピーされるのは、今回も値です。ただし、その値がアドレスなので、呼び出し先が元の対象へ届きます。「Ｃは変数そのものを関数へ移す」という意味ではありません。また、関数へ渡したポインタ自身を書き換えることと、指す先を書き換えることも別です。</p>
+      <h3>ポインタに１を足すと、何バイト進むか</h3>
+      <pre><code>int64_t values[] = {10, 20, 30};
+int64_t *p = values;</code></pre>
+      <p><strong>配列</strong>は、同じ型の要素を連続して置くものです。ここでは８バイトの整数が３個並びます。<code>p = values</code> の右側の配列は、先頭要素を指すポインタへ変換されます。配列そのものとポインタ変数が同じ物になったわけではありません。</p>
+      <p>Ｃの <code>p+1</code> は「次の要素」を指します。この型なら８バイト先です。<code>char *</code> なら１要素が１バイトなので１バイト先になります。添字の <code>p[1]</code> は <code>*(p+1)</code> と同じ意味です。</p>
+      <figure class="concept-figure"><figcaption><strong>図２　型の幅が、アドレス計算の間隔になる</strong><span>仮に先頭を0x1000とした８バイト整数の配列です。添字は０から数えます。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 225" role="img" aria-labelledby="array-title array-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="array-title">整数のポインタを１進めると８バイト進む</title><desc id="array-desc">0x1000に10、0x1008に20、0x1010に30。pは10、p+1は20、p+2は30の場所を指す。pの型の1要素が8バイトであることから位置を計算する。</desc>
+          <g fill="#e9eee5" stroke="#355d4c"><rect x="65" y="75" width="210" height="65"/><rect x="275" y="75" width="210" height="65"/><rect x="485" y="75" width="210" height="65"/></g>
+          <g text-anchor="middle"><text x="170" y="32">p</text><text x="380" y="32">p + 1</text><text x="590" y="32">p + 2</text><text x="170" y="61">0x1000</text><text x="380" y="61">0x1008</text><text x="590" y="61">0x1010</text><text x="170" y="115" class="diagram-code">10</text><text x="380" y="115" class="diagram-code">20</text><text x="590" y="115" class="diagram-code">30</text><text x="170" y="170">values[0]</text><text x="380" y="170">values[1]</text><text x="590" y="170">values[2]</text><text x="380" y="211">次の要素の場所 ＝ 先頭の場所 ＋ 添字 × ８</text></g>
+        </svg></div>
+      </figure>
+      <p>機械語の <code>mov rax, [rdi+8]</code> の８は、バイト単位の距離です。Ｃのポインタ型をＣＰＵが調べて８へ変換するのではなく、コンパイラが要素の型の幅を使って命令を作ります。一般の添字なら、必要に応じて添字を要素幅で掛けます。</p>
+      <p><code>sizeof values</code> はこの配列全体の２４バイト、<code>sizeof *p</code> は１要素の８バイトです。<code>sizeof p</code> はポインタ変数自体の幅であり、先にある配列の長さではありません。通常のポインタの値だけから、その先に何個の要素があるかはわかりません。</p>
+      <h3>Ｃの文字列は、０で終わる文字の配列</h3>
+      <pre><code>char text[] = "ABC";</code></pre>
+      <p>この配列には A、B、C に加え、最後に値０の１バイトが入ります。これを<strong>終端のヌル文字</strong>と呼び、Ｃでは <code>'\0'</code> と書きます。数字の文字 <code>'0'</code> とは違います。今回の環境で A、B、C の値はそれぞれ６５、６６、６７、終端は０です。</p>
+      <p><code>strlen(text)</code> は先頭から最初の０までを調べ、終端を含めずに３を返します。<code>sizeof text</code> は配列の領域全体なので４です。途中に０を書けば文字列としての終わりは早まりますが、配列の領域が縮むわけではありません。</p>
+      <figure class="concept-figure"><figcaption><strong>図３　終端を手前に置いても、後ろのバイトは残る</strong><span>各箱は１バイトです。文字列として読む範囲と、配列の保存領域を分けます。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 250" role="img" aria-labelledby="string-title string-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="string-title">４バイトの配列内で文字列の長さだけが３から１になる</title><desc id="string-desc">変更前はA、B、C、0。text[1]を0にするとA、0、C、0になる。文字列は最初の0で終わり長さ1だがCも配列の大きさ4も残る。</desc>
+          <g stroke="#355d4c" fill="#e9eee5"><rect x="220" y="40" width="115" height="55"/><rect x="335" y="40" width="115" height="55"/><rect x="450" y="40" width="115" height="55"/><rect x="565" y="40" width="115" height="55"/><rect x="220" y="155" width="115" height="55"/><rect x="335" y="155" width="115" height="55"/><rect x="450" y="155" width="115" height="55"/><rect x="565" y="155" width="115" height="55"/></g>
+          <rect x="335" y="155" width="115" height="55" fill="#fffef9" stroke="#a3452c" stroke-width="2"/>
+          <g text-anchor="middle" class="diagram-code"><text x="277" y="76">A</text><text x="392" y="76">B</text><text x="507" y="76">C</text><text x="622" y="76">0</text><text x="277" y="191">A</text><text x="392" y="191">0</text><text x="507" y="191">C</text><text x="622" y="191">0</text></g>
+          <text x="20" y="73">変更前：長さ３</text><text x="20" y="188">変更後：長さ１</text><text x="450" y="130" text-anchor="middle">text[1] にヌル文字を書き込む</text><text x="392" y="240" text-anchor="middle" class="diagram-small">ここで文字列が終わる</text><text x="600" y="240" text-anchor="middle" class="diagram-small">領域は残る</text>
+        </svg></div>
+      </figure>
+      <p>これは「最初の０まで読む」という文字列処理の約束です。ＣＰＵの一般的なメモリ読み出しが、０を見つけると自動で止まるわけではありません。また、strlen が数えるのはバイト数で、日本語などの表示上の文字数と一致するとは限りません。本章は１文字１バイトの A・B・C に絞ります。</p>
+      <h3>アドレスを作る命令と、そこを読む命令</h3>
+      <p>教材の <code>message_address</code> は、アセンブリ側に置いた文字列の場所を返します。</p>
+      <pre><code>message_address:
+    lea rax, [rip + .Lmessage]
+    ret
+
+.section .rodata
+.Lmessage:
+    .asciz "ABC"</code></pre>
+      <p><code>.rodata</code> は読み取り専用のデータを置く領域、<code>.Lmessage</code> はその場所の名前です。<code>.asciz</code> は指定した文字のバイト列に０を付けて配置する、アセンブラへの指示です。この３行は命令として実行されません。ファイル内にデータを用意します。</p>
+      <p><code>lea</code> は、角括弧内の<strong>アドレスを計算して</strong>レジスタに入れます。<code>mov rax, [rdi]</code> のようにその場所の値を読む命令ではありません。この例の <code>rip</code> は命令の位置に関係するレジスタで、RIP 相対という形で、次の命令の位置から文字列までの距離を使って場所を求めます。距離の調整にはアセンブラやリンカーが関わります。</p>
+      <p>返すのは３文字を詰めた値ではなく、先頭の A のアドレスです。Ｃ側がそのポインタを <code>printf</code> の <code>%s</code> に渡すと、表示処理が文字列を読みます。別の <code>first_byte</code> は <code>movzx eax, BYTE PTR [rdi]</code> で先頭の１バイトだけを読み、ゼロ拡張して返します。場所を得る段階と、そこを読む段階が別であることを確認します。</p>
+      <h3>書き換えてよい場所か、まだ使える場所か</h3>
+      <p><code>char text[]="ABC";</code> は書き換え可能な配列を用意するので、本章ではその中へ０を書けます。一方、Ｃの文字列リテラル <code>"ABC"</code> 自体を書き換えることはできません。今回アセンブリで .rodata に置いたデータも書き換えず、<code>const char *</code> として受け取ります。const は、このポインタを通して文字を書き換えないことを型に表しています。</p>
+      <p>アドレスを持っていても、いつでも読み書きできるわけではありません。ローカル配列の存続期間が終われば、それを指すポインタを返して使い続けることはできません。今回の .rodata の文字列はプログラムの実行中ずっと存在するため、message_address から戻った後にも読めます。</p>
+      <p>配列のポインタ計算は、同じ配列の範囲と、その末尾の一つ先までに限ります。末尾の一つ先のポインタは比較などに使えますが、そこから値を読んではいけません。値の幅が８バイトなら、８バイト全体が有効な対象内に収まる必要があります。場所が数値として計算できることと、Ｃの操作として正しいことは別です。</p>
+      <p class="note">ヌルポインタは有効な対象を指さないポインタで、ヌル文字は値０の文字です。似た名前でも別の概念です。また、終端のない配列を strlen や %s に渡す実験、無効なポインタの間接参照、読み取り専用データの書き換えは行いません。安全に観察できる範囲で確かめます。</p>
+      <h3>自作コンパイラへ戻って考える</h3>
+      <p>第７章の変数ノードは、決まった場所から値を読むだけでした。アドレスを扱うなら、「値を読む」の前段階に「その対象の場所を求める」処理が必要です。代入の左側は場所、右側は値を必要とします。<code>&amp;a</code> では場所をそのまま結果にし、<code>*p</code> では p の値を場所として読み書きします。</p>
+      <p>さらに、ポインタが何を指す型かを管理しないと、<code>p+1</code> の１要素が何バイトかわかりません。文字列を扱うなら、命令とは別にデータを置き、名前を付けてそのアドレスを生成する必要があります。これらが、構文だけを追加しても足りない理由です。第１１章では、命令とデータがファイルや実行中のメモリへどう配置されるかを広げて見ます。</p>
+    </section>
+    <section id="hands-on" aria-labelledby="hands-on-title">
+      <h2 id="hands-on-title"><span class="number">３</span>ハンズオン</h2>
+      <h3>準備：メモリを観察するプログラムを作る</h3>
+      <p>これまでと同じリナックスのコンテナ内で実行します。まだ入っていなければ、マック側のリポジトリで <code>make -f docker.mk shell</code> を実行してください。</p>
+      <pre><code>cd /workspace/textbook/new/labs/ch10
+gcc -std=c11 -Wall -Wextra -o /tmp/ch10-inspect inspect.c memory.s</code></pre>
+      <p><a href="labs/ch10/inspect.c">inspect.c</a> が値を用意して表示し、<a href="labs/ch10/memory.s">memory.s</a> が短い機械語の関数を提供します。gcc が両方を処理してリンクします。今回は自作コンパイラではなく、観察用プログラムをビルドしています。</p>
+      <h3>実験１：ポインタを通して、元の変数を書く</h3>
+      <p><strong>実行前に：</strong>p と q がともに a を指すとき、<code>write_value(q,42)</code> の後で a・*p・*q はそれぞれ何になるか予想してください。</p>
+      <pre><code>/tmp/ch10-inspect address</code></pre>
+      <p><code>address</code> は実験名です。表示されるアドレスは、printf の <code>%p</code> を使っています。アドレスの具体的な数値は実行ごとに変わることがあるので、数値を暗記せず、どの表示同士が一致するかを見てください。</p>
+      <details><summary>実行後に開く：場所は共有され、値は４２に変わる</summary><p>a の場所と p が指す場所が一致します。一方、p 自身の場所は別です。最初に機械語で読める値は７、書き込み後は a・*p・*q のすべてが４２です。q へ４２を入れたのではなく、q が指す対象へ書きました。</p></details>
+      <h3>実験２：「＋１」が１バイトとは限らないことを見る</h3>
+      <p>values は８バイトの整数３個です。<code>p[1]</code>、<code>*(p+1)</code>、機械語の <code>[rdi+8]</code> は同じ場所を読むか、予想します。</p>
+      <pre><code>/tmp/ch10-inspect array</code></pre>
+      <details><summary>実行後に開く：三つとも２０</summary><p>１要素は８バイト、配列全体は２４バイトです。どの読み方でも２番目の要素２０になります。また、Ｃの <code>(p+1)-p</code> は１です。ポインタ同士の差も、ここではバイト数ではなく要素数を表します。</p></details>
+      <h3>実験３：文字列の長さと、配列の大きさを分ける</h3>
+      <p><code>char text[]="ABC";</code> の後で <code>text[1]='\0';</code> とします。文字列の表示、strlen の結果、sizeof の結果、text[2] の値を予想してください。</p>
+      <pre><code>/tmp/ch10-inspect string</code></pre>
+      <details><summary>実行後に開く：短くなったのは、終端までの範囲</summary><p>最初は表示が ABC、配列４バイト、長さ３です。変更後は表示が A、配列は４バイトのまま、長さは１になります。text[2] の C は消えずに残ります。文字列処理が最初の０で止まるため、表示されないだけです。</p></details>
+      <p>さらに試すなら、マック側のエディタで <code>textbook/new/labs/ch10/inspect.c</code> の <code>text[1]='\0'</code> を <code>text[1]='X'</code> に変えます。末尾の０は残るため、表示は AXC、長さは３になるはずです。同じ関数の assert にある <code>strlen(text) == 1</code> も <code>strlen(text) == 3</code> に変え、準備の gcc コマンドでビルドし直してから、string の実験を実行します。assert は期待値の検査なので、新しい実験に合わせています。試した後は両方を戻し、再ビルドしてください。</p>
+      <h3>実験４：関数から文字列の場所を受け取る</h3>
+      <p>message_address が返すのは、文字列そのものを詰めた整数でしょうか、それとも先頭の場所でしょうか。first_byte の結果も予想します。</p>
+      <pre><code>/tmp/ch10-inspect literal</code></pre>
+      <details><summary>実行後に開く：場所を受け取り、読む側が用途を決める</summary><p>文字列として表示すると ABC、先頭１バイトを整数として読むと６５です。同じ場所を渡しても、%s は０までの列として、first_byte は先頭の１バイトとして読みます。message_address は読み取り専用データの場所を返し、そのデータは関数が戻った後も残ります。</p></details>
+      <h3>実験５：ファイル内の文字データを見つける</h3>
+      <pre><code>gcc -c memory.s -o /tmp/ch10-memory.o
+objdump -s -j .rodata /tmp/ch10-memory.o</code></pre>
+      <p>１行目はアセンブルだけ行い、オブジェクトファイルを作ります。２行目の <code>-s</code> は内容のバイト表示、<code>-j .rodata</code> は対象の領域の指定です。メモリに読み込んで関数を実行しているのではなく、ファイルのデータを観察します。</p>
+      <details><summary>観察後に開く：41424300 が ABC と終端に対応する</summary><p>１６進の <code>41 42 43 00</code> が見つかります。順に十進６５・６６・６７・０です。最後の０は画面に見える文字ではありませんが、文字列の終わりを示す実際の１バイトです。</p></details>
+      <p>すべての教材を元の状態に戻したら、<code>bash check.sh</code> で確認できます。<a href="labs/ch10/check.sh">検証スクリプト</a>は最適化なし・ありの両方で値を確認し、オブジェクト内の終端も調べます。プログラム内の <code>assert</code> は、予想した条件が満たされるかを検査し、違えば停止するためのものです。</p>
+    </section>
+    <section id="check" aria-labelledby="check-title">
+      <h2 id="check-title"><span class="number">４</span>理解チェック</h2>
+      <h3>p と &amp;p と *p は、何を表すか？</h3>
+      <details><summary>解説を読む</summary><p>p はポインタ変数の中の値、&amp;p はポインタ変数自身の場所、*p はその値が指す先の対象です。p が a を指していれば、*p を読む操作は a の値を読みます。</p></details>
+      <h3>q=p の後に *q を変えることは、第７章の b=a と同じか？</h3>
+      <details><summary>解説を読む</summary><p>コピーする値の意味が違います。q=p は場所を指す値をコピーするため、両方から同じ対象へ届きます。整数の b=a は整数値のコピーなので、その後に b を変えても a は変わりません。</p></details>
+      <h3>mov rax, [rdi+8] の８を、ＣＰＵが型から選んだのか？</h3>
+      <details><summary>解説を読む</summary><p>いいえ。コンパイラまたはアセンブリを書いた人が要素幅に基づいて８を指定しています。命令にはＣのポインタ型がそのまま残っているわけではありません。</p></details>
+      <h3>文字列の途中へ０を書くと、配列の残りは削除されるか？</h3>
+      <details><summary>解説を読む</summary><p>削除されません。最初の０を終端とする処理が、その先を文字列として読まなくなります。配列の範囲内なら、残る要素は添字で個別に読めます。</p></details>
+      <h3>lea rax, [rip + .Lmessage] は、A の値６５を返すか？</h3>
+      <details><summary>解説を読む</summary><p>返すのは A が置かれた場所です。lea はアドレスを求める命令です。６５を得るには、その場所の１バイトを別の読み出し命令で読む必要があります。</p></details>
+      <h3>関数内のローカル配列のアドレスを返せば、文字列を残せるか？</h3>
+      <details><summary>解説を読む</summary><p>その配列の存続期間が関数から戻った時点で終わるなら、返したポインタで読み続けることはできません。本章の message_address が返すのはローカル配列ではなく、実行中ずっと存在する静的なデータの場所です。</p></details>
+      <div class="sources"><h3>参照先</h3><p><a href="https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Pointers.html">ＧＮＵ Ｃ言語マニュアル：ポインタ</a>、<a href="https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Pointers-and-Arrays.html">ポインタと配列</a>、<a href="https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Strings.html">文字列</a>、<a href="https://sourceware.org/glibc/manual/latest/html_node/Representation-of-Strings.html">ＧＮＵ Ｃライブラリ：文字列の表現</a>。</p><p>教材のリナックス環境で、間接読み書き、要素幅、終端の変更、静的データのアドレスと内容を検証しています。</p></div>
+    </section>
+    <footer><nav class="chapter-navigation" aria-label="前後の章"><a class="chapter-prev" href="integer-representation.html" rel="prev">第９章　整数の表現</a><a class="chapter-next" href="executable-image.html" rel="next">第１１章　実行イメージと初期化</a></nav></footer>
+  </main>
+</body>
+</html>

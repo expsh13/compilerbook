@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="引数・戻り値・戻りアドレスの受け渡しと、入れ子の呼び出しで値を守る方法を実験する。">
+  <title>第８章　関数呼び出し｜実験で理解するコンパイラ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">本文へ移動</a>
+  <details class="sidebar"><summary>目次</summary><aside>
+    <p class="brand">実験で理解する<br>コンパイラ</p><p class="edition">新しい教科書</p>
+    <nav aria-label="本の目次">
+      <a href="contents.html">目次　全体の章立て</a><a href="index.html">序章　本の構成</a>
+      <a href="machine-code.html">第１章　機械語とアセンブラ</a><a href="minimal-compiler.html">第２章　最小のコンパイラ</a>
+      <a href="tokenization.html">第３章　字句解析</a><a href="parsing.html">第４章　構文解析</a>
+      <a href="code-generation.html">第５章　式のコード生成</a><a href="separate-compilation.html">第６章　分割コンパイルとリンク</a>
+      <a href="local-variables.html">第７章　ローカル変数とスタック</a>
+      <a href="function-calls.html" aria-current="page">第８章　関数呼び出し</a>
+      <a href="integer-representation.html">第９章　整数の表現</a>
+      <a href="pointers-and-strings.html">第１０章　ポインタと文字列</a>
+      <a href="executable-image.html">第１１章　実行イメージと初期化</a>
+      <a href="linking-libraries.html">第１２章　スタティックリンクとダイナミックリンク</a>
+      <a href="type-declarations.html">第１３章　Ｃの型の構文</a>
+    </nav>
+    <nav class="contents" aria-label="この章の目次"><a href="#question">１　この章で扱う問い</a><a href="#theory">２　この章の理論</a><a href="#hands-on">３　ハンズオン</a><a href="#check">４　理解チェック</a></nav>
+    <a class="previous" href="../index.html">以前の教科書を読む</a>
+  </aside></details>
+  <main id="main">
+    <header><p class="eyebrow">第８章</p><h1>関数呼び出し</h1><p class="lead">値を渡し、実行を移し、結果を受け取って続きを進める。</p><p>第６章で別の部品への接続を、第７章で値の保存場所を学びました。今回は両者をつなぎ、自作コンパイラが出す main から、別のファイルにある関数を呼び出せるようにします。</p></header>
+    <section id="question" aria-labelledby="question-title">
+      <h2 id="question-title"><span class="number">１</span>この章で扱う問い</h2>
+      <p><strong>関数へ引数を渡し、元の計算を壊さずに結果を受け取るには、どんな命令が必要か？</strong></p>
+      <p><code>f(3,5)</code> を呼ぶとき、３と５はどこへ置くのでしょうか。また、<code>1+f(3,g(4))</code> では、g を計算している間、外側の１と、先に用意した３をどこに残せばよいでしょうか。実行の移動だけでなく、値を守る仕組みまで追います。</p>
+      <p>前提は第５章の一時保存、第６章のリンク、第７章のスタックフレームです。本章では呼び出す側を自作し、呼ばれる関数の本体はＣで用意します。自作言語で関数本体を定義する構文や再帰の実装は、今回の範囲には含めません。</p>
+    </section>
+    <section id="theory" aria-labelledby="theory-title">
+      <h2 id="theory-title"><span class="number">２</span>この章の理論</h2>
+      <h3>まず、呼ぶ関数の働きを決める</h3>
+      <p><a href="labs/ch08/functions.c">functions.c</a> に、次の３関数を用意しました。関数の括弧内に書く x や y は、渡された値に付ける名前で、<strong>仮引数</strong>と呼びます。呼び出す式に書く３や５は<strong>実引数</strong>です。</p>
+      <pre><code>long f(long x, long y) {
+    return x * 10 + y;
+}
+
+long g(long x) {
+    return x * 2;
+}
+
+long h(void) {
+    return 7;
+}</code></pre>
+      <p>f は第１引数を１０倍して第２引数を足します。<code>f(3,5)</code> は３５、<code>f(5,3)</code> は５３です。単なる和にしないことで、引数の順序を逆にした誤りを結果から見つけられます。g は２倍、h は引数なしで７を返します。</p>
+      <p>今回のリナックス x86-64 環境では <code>long</code> は８バイトです。第７章の変数や計算が使う６４ビットの値とそろえるため、これらの関数の引数と戻り値に long を使います。すべてのＯＳで long が８バイトとは限らないので、教材ファイルではそのサイズも検査します。</p>
+      <h3>呼ぶ側と呼ばれる側が、同じ約束を使う</h3>
+      <p>Ｃで書いた関数と、自作したアセンブリが値を受け渡せるのは、機械語レベルの約束を共有するからです。こうした約束を含む境界の仕様を<strong>ＡＢＩ</strong>と呼び、そのうち引数・戻り値・レジスタなどの受け渡し規則を<strong>呼び出し規約</strong>と呼びます。</p>
+      <p>本章の対象は、リナックスの x86-64 で使う System V AMD64 の規則です。今回のような整数の引数は、先頭から <code>rdi</code>、<code>rsi</code>、<code>rdx</code>、<code>rcx</code>、<code>r8</code>、<code>r9</code> の順に渡し、整数の戻り値は <code>rax</code> で受け取ります。本章で実装する引数は最大２個なので、使うのは rdi と rsi までです。浮動小数点、構造体、可変個引数などは扱いません。</p>
+      <figure class="concept-figure"><figcaption><strong>図１　f(3,5) の値の受け渡し</strong><span>上の矢印は引数、下の矢印は計算後の戻り値です。呼び出し先は、ソースの文字列を直接読むのではなく、レジスタ内の値を受け取ります。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 270" role="img" aria-labelledby="args-title args-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="args-title">３と５を引数レジスタで渡し、３５を結果レジスタで受け取る</title><desc id="args-desc">呼び出し側のrdiの3がfのx、rsiの5がyに対応する。fはx掛ける10足すyを計算し、raxの35で結果を返す。</desc>
+          <defs><marker id="args-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#355d4c"/></marker></defs>
+          <g fill="#e9eee5" stroke="#355d4c"><rect x="20" y="45" width="265" height="190" rx="5"/><rect x="475" y="45" width="265" height="190" rx="5"/></g>
+          <g text-anchor="middle"><text x="152" y="25">呼び出す main</text><text x="608" y="25">呼ばれる f</text><text x="152" y="91" class="diagram-code">rdi = 3</text><text x="152" y="136" class="diagram-code">rsi = 5</text><text x="608" y="91">x として３を使う</text><text x="608" y="136">y として５を使う</text><text x="608" y="177">３×１０＋５</text><text x="152" y="209" class="diagram-code">rax = 35</text><text x="608" y="209" class="diagram-code">rax = 35</text></g>
+          <g stroke="#355d4c" stroke-width="2" marker-end="url(#args-arrow)"><path d="M292 85H467"/><path d="M292 130H467"/><path d="M467 202H292"/></g>
+          <text x="380" y="185" text-anchor="middle" class="diagram-small">戻り値</text>
+        </svg></div>
+      </figure>
+      <p>レジスタ自体を別々に所有して渡すわけではありません。実行を移す前後で、同じＣＰＵのレジスタを使います。図はその値をどちらの処理が用意し、どちらが利用するかを分けたものです。</p>
+      <h3>call と ret は、実行する場所を変える</h3>
+      <pre><code>mov rdi, 3
+mov rsi, 5
+call f
+add rax, 1</code></pre>
+      <p>これは、引数が用意できていてスタックの条件も満たしている場合の、受け渡し部分だけの例です。最初の２行は値を置きます。<code>call f</code> は、次の <code>add</code> の位置を戻りアドレスとしてスタックに保存してから、f へ実行を移します。call 自体が３と５を計算したり、引数レジスタへ自動で並べたりするわけではありません。</p>
+      <p>f が rax に３５を用意し、<code>ret</code> で保存された場所へ戻ると、main は <code>add rax, 1</code> を実行して３６にします。<strong>戻り値３５と、戻りアドレスは別の情報</strong>です。戻り値はデータで、戻りアドレスは続きの命令の場所です。</p>
+      <figure class="concept-figure"><figcaption><strong>図２　呼び出し元の「続き」が保存される</strong><span>矢印は実行の移動です。戻りアドレスは値３５の置き場所ではありません。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 270" role="img" aria-labelledby="return-title return-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="return-title">callでfへ移動し、retでmainの次の命令へ戻る</title><desc id="return-desc">mainのcall fが次のadd命令の場所を保存してfへ移る。fはraxへ35を用意しretで保存したaddの場所へ戻る。</desc>
+          <g fill="#e9eee5" stroke="#355d4c"><rect x="20" y="45" width="285" height="190" rx="5"/><rect x="455" y="45" width="285" height="190" rx="5"/></g>
+          <g text-anchor="middle"><text x="162" y="25">main</text><text x="597" y="25">f</text><text x="162" y="94" class="diagram-code">call f</text><text x="162" y="190" class="diagram-code">add rax, 1</text><text x="597" y="94">計算して rax に３５</text><text x="597" y="190" class="diagram-code">ret</text><text x="162" y="217" class="diagram-small">ここから再開する</text><text x="380" y="258" class="diagram-small">call が保存した位置を ret が使う</text></g>
+          <path d="M310 88H448M438 82L448 88L438 94M450 185H311M321 179L311 185L321 191" fill="none" stroke="#355d4c" stroke-width="2"/>
+          <text x="380" y="68" text-anchor="middle" class="diagram-small">呼び出す</text><text x="380" y="167" text-anchor="middle" class="diagram-small">戻る</text>
+          <path d="M162 105V120M162 151V164" fill="none" stroke="#a3452c" stroke-dasharray="4 4"/><text x="162" y="143" text-anchor="middle" class="diagram-small">続きの位置を保存</text>
+        </svg></div>
+      </figure>
+      <h3>呼び出した後も、レジスタの値は残るのか</h3>
+      <p>呼ばれた関数も計算のためにレジスタを使います。今回の規則では rax、rdi、rsi などの値は、呼び出し後も同じとは限りません。呼ぶ側が、後でも必要な値を保管しておく必要があります。これを<strong>呼び出し側で保存するレジスタ</strong>と考えます。</p>
+      <p>反対に rbp や rbx などは、呼ばれる側が使い変えるなら、戻る前に元の値へ復元する約束です。第７章で main が入り口で rbp を保存し、終わりに戻していたのは、この約束に対応しています。rsp も、呼び出しから戻った時点で、呼ぶ直前の位置へ戻っている必要があります。</p>
+      <p>本章では、呼び出しをまたいで必要な途中結果をスタックに保存します。たとえば <code>1+g(4)</code> の１は、g がレジスタを使っても失われません。g の戻り値８を受け取ってから１を取り出し、足し合わせます。</p>
+      <h3>引数の中の関数呼び出しに備える</h3>
+      <p><code>f(3,g(4))</code> では、第１引数３を rdi に置いたまま g を呼ぶ方法は危険です。g に渡す４も rdi に置く必要があり、さらに g 自身も rdi を変えてよいからです。</p>
+      <p>そこで、本章のコンパイラは<strong>引数を左から順に計算して一時保存し、すべてそろった後に引数レジスタへ置く</strong>方法を使います。２個の引数なら、第１引数を push、第２引数を push した後、逆順に pop して rsi、rdi に入れます。この左から右という評価順は教材の言語で決めたもので、Ｃの引数評価順の一般的な保証ではありません。</p>
+      <figure class="concept-figure"><figcaption><strong>図３　外側の３を守りながら、g(4) を計算する</strong><span>f(3,g(4)) に関係する一時保存値だけを描いています。戻りアドレスや整列用の空きは省略します。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 295" role="img" aria-labelledby="nested-title nested-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="nested-title">関数の引数を計算して保存し、最後にレジスタへ置く</title><desc id="nested-desc">第1引数の3をスタックに保存する。gへ4を渡して8を受け取る間も3は残る。8も保存し、8をrsi、3をrdiへ取り出してfを呼ぶ。</desc>
+          <g text-anchor="middle"><text x="125" y="30">① ３を保存</text><text x="375" y="30">② g(4) を実行</text><text x="625" y="30">③ f の引数を配置</text></g>
+          <g fill="#e9eee5" stroke="#355d4c"><rect x="40" y="165" width="170" height="50" rx="4"/><rect x="290" y="165" width="170" height="50" rx="4"/><rect x="540" y="75" width="170" height="50" rx="4"/><rect x="540" y="165" width="170" height="50" rx="4"/></g>
+          <g text-anchor="middle"><text x="125" y="197">保存値：３</text><text x="375" y="197">保存値：３</text><text x="375" y="85">rdi に４を渡す</text><text x="375" y="118">rax に８が戻る</text><text x="625" y="107" class="diagram-code">rsi = 8</text><text x="625" y="197" class="diagram-code">rdi = 3</text><text x="125" y="249" class="diagram-small">レジスタから退避</text><text x="375" y="249" class="diagram-small">g が動いても３は残る</text><text x="625" y="249" class="diagram-small">そろったら call f</text></g>
+          <path d="M220 190H280M270 184L280 190L270 196M472 110H530M520 104L530 110L520 116M472 190H530M520 184L530 190L520 196" fill="none" stroke="#355d4c" stroke-width="2"/>
+        </svg></div>
+        <p class="figure-takeaway">「先に求めた引数を保存する」ことと、「呼ぶ直前に決まったレジスタへ並べる」ことを分けます。戻った rax の３８は、普通の式の結果として使えます。</p>
+      </figure>
+      <h3>call の直前は、スタックの位置もそろえる</h3>
+      <p>値を正しいレジスタへ置くだけでは不十分です。今回の整数だけの呼び出しでは、<strong>call を実行する直前の rsp を１６の倍数のアドレスにする</strong>約束があります。このように位置を一定の単位にそろえることを<strong>アラインメント</strong>と呼びます。</p>
+      <p>call は戻りアドレス８バイトを積むので、呼ばれた関数の入り口では、rsp を１６で割った余りは８になります。第７章の main はそこで rbp を push して８バイト進め、さらに２０８バイト（１６の倍数）を確保します。そのため、本文の開始時点の rsp は１６の倍数です。</p>
+      <p>本文で一時保存を１回すると、rsp はさらに８バイト動き、１６の倍数ではなくなります。２回なら合計１６バイトなので再びそろいます。コンパイラは、現在何個の一時保存値が積まれているかを <code>depth</code> という数で把握し、奇数個なら call の前に８バイト分の空きを足し、戻ったらその空きを戻します。</p>
+      <pre><code>sub rsp, 8
+call g
+add rsp, 8</code></pre>
+      <p>これは必要な場合だけ出す調整です。<code>sub</code> は空きを作るだけで、引数や戻り値を書き込む命令ではありません。<code>add</code> はその空きを使い終える操作で、rax の戻り値は変えません。引数用の一時保存を pop した後にも、外側の計算用の保存値が残っている可能性がある点が重要です。</p>
+      <div class="table-scroll"><table><thead><tr><th>呼び出し直前に残る保存値</th><th>rsp の１６で割った余り</th><th>追加する調整</th></tr></thead><tbody>
+        <tr><td>０個、２個など偶数個</td><td>０</td><td>なし</td></tr>
+        <tr><td>１個、３個など奇数個</td><td>８</td><td>call 前に８を引き、戻ったら８を足す</td></tr>
+      </tbody></table></div>
+      <p>単純な関数が偶然動いても、位置の規則を守れているとは限りません。呼び出し先がその前提で命令を使えば、違反した呼び出しが失敗する場合があります。教材には、この条件を直接検査する部品も用意しています。</p>
+      <h3>構文木に、関数呼び出しを加える</h3>
+      <p><a href="labs/ch08/compiler.c">今回の compiler.c</a> は、第７章の文・変数・四則演算を残し、式の基本要素に呼び出しを加えています。</p>
+      <pre><code>primary = 数 | 変数 | '(' expr ')'
+        | 'f' '(' expr ',' expr ')'
+        | 'g' '(' expr ')'
+        | 'h' '(' ')'</code></pre>
+      <p>名前の直後が開き括弧なら呼び出しとして読みます。呼び出しノードの <code>op</code> は <code>'c'</code>、<code>value</code> は関数名の文字です。<code>left</code> は第１引数、<code>right</code> は第２引数の木を指します。引数がない位置は NULL にします。<code>arity</code> 関数は、f が２個、g が１個、h が０個という対応を返します。</p>
+      <p>この３関数の名前と個数は、今はコンパイラ内に固定しています。一般の関数宣言を読み取る仕組みはまだありません。f・g・h は関数用に予約するため、第７章と違って変数名には使えません。そのほかの変数は従来どおり小文字１文字です。</p>
+      <h3>生成関数に、保存中の個数を渡す</h3>
+      <p>生成関数は <code>generate(node, depth)</code> になります。depth は「この部分木の命令が動き始めるときに、外側が一時保存している８バイト値の個数」です。これはコンパイル中に数える情報で、生成プログラム内の変数ではありません。</p>
+      <p>二項演算の右の子を生成するときは、左の結果を１個 push 済みなので <code>depth + 1</code> を渡します。呼び出しの第２引数を生成するときも、第１引数を保存済みなので同様です。生成された各部分木は、自分が追加した一時保存を片付け、結果を rax に残す約束を保ちます。</p>
+      <pre><code>if (node-&gt;op == 'c') {
+    int count = arity((char)node-&gt;value);
+    if (count &gt;= 1) {
+        generate(node-&gt;left, depth);
+        printf("    push rax\n");
+    }
+    if (count == 2) {
+        generate(node-&gt;right, depth + 1);
+        printf("    push rax\n");
+        printf("    pop rsi\n");
+    }
+    if (count &gt;= 1) printf("    pop rdi\n");
+    if (depth % 2 != 0) printf("    sub rsp, 8\n");
+    printf("    call %c\n", node-&gt;value);
+    if (depth % 2 != 0) printf("    add rsp, 8\n");
+    return;
+}</code></pre>
+      <p>第２引数を保存した直後に取り出すのは、すべての引数を保存してから逆順に配置する手順を、そのまま表しているためです。最短の命令列にする最適化は行いません。引数を取り出し終えると保存数は元の depth に戻るので、それを整列判定に使います。</p>
+      <p>出力された <code>call f</code> の参照先を、functions.o の f と結び付けるのは第６章のリンクの仕事です。リンカーが引数を並べ直すわけではありません。呼ぶ側が正しい引数を用意し、リンクで接続先が決まり、実行時に初めて値が渡ります。</p>
+      <p class="note">本章は整数の固定個引数、最大２個の呼び出しに限定します。printf のような可変個引数の関数は、別の規則も必要なのでこの仕組みのまま呼びません。ゼロ除算・整数の範囲超過は引き続き扱わず、最終結果の観察には０〜２５５の終了状態を使います。</p>
+    </section>
+    <section id="hands-on" aria-labelledby="hands-on-title">
+      <h2 id="hands-on-title"><span class="number">３</span>ハンズオン</h2>
+      <h3>準備：呼ぶ側の生成器と、呼ばれる部品を作る</h3>
+      <p>第１章と同じリナックスのコンテナ内で実行します。まだ入っていなければ、マック側のリポジトリで <code>make -f docker.mk shell</code> を実行してください。</p>
+      <pre><code>cd /workspace/textbook/new/labs/ch08
+gcc -std=c11 -Wall -Wextra -o /tmp/ch08-compiler compiler.c
+gcc -std=c11 -Wall -Wextra -O0 -c functions.c -o /tmp/ch08-functions.o</code></pre>
+      <p>２行目は自作コンパイラ自身の実行ファイルを作ります。３行目はＣの関数の本体をオブジェクトにします。<code>-c</code> なので、まだリンクはしません。<code>-O0</code> は最適化を抑える指定です。どちらも成功したことを確認して次へ進みます。</p>
+      <h3>実験１：引数の順序を確認する</h3>
+      <p><strong>実行前に：</strong><code>f(3,5)</code> の結果と、３と５が入るレジスタを予想します。</p>
+      <pre><code>/tmp/ch08-compiler 'f(3,5);' &gt; /tmp/ch08-result.s
+cat /tmp/ch08-result.s
+gcc /tmp/ch08-result.s /tmp/ch08-functions.o -o /tmp/ch08-program
+/tmp/ch08-program
+echo $?</code></pre>
+      <p>１行目は命令の生成、２行目はその表示、３行目はアセンブル・リンクです。４行目で初めて生成プログラムが動きます。<code>echo $?</code> はその終了状態の表示です。入力全体を引用符で囲み、括弧やセミコロンをシェルではなくコンパイラへ渡しています。</p>
+      <details><summary>実行後に開く：逆順に取り出し、正しい順序へ配置する</summary><p>結果は３５です。３、５の順に push した後、最後の５を rsi、残る３を rdi へ pop します。表示されたコードで、この順序と <code>call f</code> を確認してください。</p></details>
+      <p>同じ手順で入力を <code>f(5,3);</code> に変えます。生成とリンクをやり直してから実行してください。</p>
+      <details><summary>結果を照合する</summary><p>５３です。引数の順序も関数への入力の一部なので、同じ二つの数でも結果が変わります。</p></details>
+      <h3>実験２：関数呼び出しを、引数の中へ入れる</h3>
+      <p><code>f(3,g(4));</code> を実験１と同じ手順で生成・リンク・実行します。実行前に、g に渡す値、g から戻る値、最後に f に渡す二つの値を書いてください。</p>
+      <details><summary>実行後に開く：先に g、後で f</summary><p>g は４を受け取って８を返します。その後に f へ３と８を渡すので結果は３８です。生成された命令では <code>call g</code> が <code>call f</code> より前に現れます。先に求めた３は、g を呼んでいる間スタックで待ちます。</p></details>
+      <p>続けて <code>f(g(3),h());</code> を試してください。今度は第１引数も第２引数も関数呼び出しです。</p>
+      <details><summary>結果を照合する</summary><p>g(3) の６と h() の７を f に渡すので、６７になります。h には引数を渡しませんが、実行の移動・戻り値の受け取り・スタック位置の調整は必要です。</p></details>
+      <h3>実験３：外側の途中結果と、ローカル変数を守る</h3>
+      <p>次の二つの入力を、一つずつ実験１と同じ手順で試します。どの値をスタックに残して呼び出しているか考えます。</p>
+      <pre><code>1+f(2,g(3));
+a=9; g(3); a;</code></pre>
+      <details><summary>実行後に開く：計算用の保存と、変数用の保存</summary><p>最初は g(3) が６、f(2,6) が２６で、最後に待っていた１を足して２７です。次は９です。g が返した６は途中の文の値にすぎず、最後の文で a の９を読み直します。g に a の保存先を渡していないので、g は今回の a を書き換えません。</p></details>
+      <p>最初の入力で <code>call f</code> の直前を見ると、外側の１がまだ保存中なので、<code>sub rsp, 8</code> が出ます。一方、g を呼ぶ直前は外側の１と f の第１引数２が保存中で、２個なので追加の８バイトは不要です。調整は、呼ぶ関数名ではなく、その時点の保存数で決まります。</p>
+      <h3>実験４：規則を守れているか、厳しい部品で確かめる</h3>
+      <p>単純なＣの関数だけでは、たまたまレジスタの値が残り、誤りを見逃すことがあります。検証用の <a href="labs/ch08/probe.s">probe.s</a> は同じ f・g・h を定義しますが、入り口でスタック位置を検査し、戻る前に変更してよい作業用レジスタを意図的に書き換えます。rax の戻り値と、保存すべきレジスタは守ります。</p>
+      <pre><code>gcc -c probe.s -o /tmp/ch08-probe.o
+/tmp/ch08-compiler '1+f(2,g(3));' &gt; /tmp/ch08-result.s
+gcc /tmp/ch08-result.s /tmp/ch08-probe.o -o /tmp/ch08-probe-program
+/tmp/ch08-probe-program
+echo $?</code></pre>
+      <p>今回は functions.o の代わりに probe.o をリンクします。両方とも同じ名前を定義するため、両方を一緒に渡してはいけません。スタック位置が違えば、検証用部品は意図的に不正命令で停止します。これはエラーを確実に検出するための仕組みで、本番の関数が必ず同じように止まるという意味ではありません。</p>
+      <details><summary>実行後に開く：通常版と同じ２７になる</summary><p>正しく保存と整列ができていれば、作業用レジスタを上書きされても２７です。probe.s の検査は、関数の入り口で rsp を１６で割った余りが８かを調べています。call 直前の条件は０であり、call が戻りアドレスを積むため入り口では８になる、という違いに注意してください。</p></details>
+      <h3>実験５：解析の失敗と、リンクの失敗を分ける</h3>
+      <pre><code>/tmp/ch08-compiler 'f(3);' &gt; /tmp/ch08-rejected.s
+echo $?</code></pre>
+      <p>f は引数２個と決めているため、この入力はコンパイラが拒否します。終了状態は１、アセンブリの出力は空です。<code>&gt;</code> 自体は先に処理されるので空のファイルは作られますが、そのビルドには進みません。</p>
+      <p>一方、正しい呼び出しを生成しても、本体の部品を渡し忘れると、失敗する段階が変わります。</p>
+      <pre><code>/tmp/ch08-compiler 'f(3,5);' &gt; /tmp/ch08-result.s
+echo $?
+gcc /tmp/ch08-result.s -o /tmp/ch08-missing
+echo $?</code></pre>
+      <details><summary>実行後に開く：命令を作れることと、本体がそろうことは別</summary><p>コンパイラは成功して０を返しますが、リンクは f の定義を見つけられず失敗します。今回のコンパイラは f の名前と個数を知っていても、その本体を自動でリンクする道具ではありません。第６章で見た、参照を満たす部品が不足した状態です。</p></details>
+      <p>まとめて確認するには、第８章のフォルダで <code>bash check.sh</code> を実行します。<a href="labs/ch08/check.sh">検証スクリプト</a>は通常のＣの部品と検査用の部品の両方で、引数の順序、入れ子、変数、負の途中結果などを確認します。教材の compiler.c を変更した場合は、元の内容へ戻してから使ってください。</p>
+    </section>
+    <section id="check" aria-labelledby="check-title">
+      <h2 id="check-title"><span class="number">４</span>理解チェック</h2>
+      <h3>call f が実行されると、引数が自動で rdi と rsi に入るか？</h3>
+      <details><summary>解説を読む</summary><p>入りません。呼ぶ側が事前に配置します。call は戻りアドレスを保存して実行を移す命令です。引数の意味は、両者が従う呼び出し規約によって決まります。</p></details>
+      <h3>戻り値と戻りアドレスは、どこにあるか？</h3>
+      <details><summary>解説を読む</summary><p>今回の整数の戻り値は rax、戻りアドレスは call がスタックへ保存した続きの位置です。ret は戻りアドレスを使います。計算結果を rax へ入れる仕事は、呼ばれた関数が先に行います。</p></details>
+      <h3>f(3,g(4)) で、３をすぐ rdi に置いて待ってはいけないのはなぜか？</h3>
+      <details><summary>解説を読む</summary><p>g に渡す４も rdi を使い、さらに g 自身がそのレジスタを変更してよいからです。３をスタックに保存し、g の結果を求め終えてから、f の引数レジスタへ配置します。</p></details>
+      <h3>引数をすべて pop したなら、整列のための調整は不要か？</h3>
+      <details><summary>解説を読む</summary><p>必ずしも不要ではありません。外側の式が保存した値が残る場合があります。<code>1+h()</code> なら h に引数はありませんが、外側の１が１個保存中なので、追加の８バイトが必要です。</p></details>
+      <h3>なぜ呼び出した関数の rbp が、main の変数を壊さないのか？</h3>
+      <details><summary>解説を読む</summary><p>呼ばれた関数が rbp を使い変えるなら、元の値を保存し、戻る前に復元する約束だからです。main の変数は main が確保した領域に残ります。呼び出し先の一時領域は、それより小さいアドレス側に作られます。呼び出し先が必ず rbp を使うとは限りません。</p></details>
+      <h3>自作言語の入力に f の定義がなくても、呼べるのはなぜか？</h3>
+      <details><summary>解説を読む</summary><p>呼び出し側は参照を含む命令を生成し、Ｃで作った別のオブジェクトが定義を提供するからです。リンクが名前を結び付け、呼び出し規約が値の受け渡しをそろえます。どちらか一方だけでは正しい関数呼び出しになりません。</p></details>
+      <div class="sources"><h3>参照先</h3><p><a href="https://gitlab.com/x86-psABIs/x86-64-ABI">System V AMD64 ＡＢＩの公式資料</a>の関数呼び出し規則と、<a href="https://www.sigbus.info/compilerbook">原書「低レイヤを知りたい人のためのＣコンパイラ作成入門」</a>の関数呼び出しに対応します。本章は３種類の外部関数に範囲を絞り、引数の一時保存とスタック位置の調整を明示しています。</p><p>教材のリナックス環境で、通常のＣの部品と、整列・レジスタの保存を調べる検証用部品の両方を使って動作を確認します。</p></div>
+    </section>
+    <footer><nav class="chapter-navigation" aria-label="前後の章"><a class="chapter-prev" href="local-variables.html" rel="prev">第７章　ローカル変数とスタック</a><a class="chapter-next" href="integer-representation.html" rel="next">第９章　整数の表現</a></nav></footer>
+  </main>
+</body>
+</html>

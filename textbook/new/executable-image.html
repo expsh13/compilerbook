@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ELFのセクションとセグメント、ファイルとメモリ、静的な初期値と実行時の初期化を観察する。">
+  <title>第１１章　実行イメージと初期化｜実験で理解するコンパイラ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">本文へ移動</a>
+  <details class="sidebar"><summary>目次</summary><aside>
+    <p class="brand">実験で理解する<br>コンパイラ</p><p class="edition">新しい教科書</p>
+    <nav aria-label="本の目次">
+      <a href="contents.html">目次　全体の章立て</a><a href="index.html">序章　本の構成</a>
+      <a href="machine-code.html">第１章　機械語とアセンブラ</a><a href="minimal-compiler.html">第２章　最小のコンパイラ</a>
+      <a href="tokenization.html">第３章　字句解析</a><a href="parsing.html">第４章　構文解析</a>
+      <a href="code-generation.html">第５章　式のコード生成</a><a href="separate-compilation.html">第６章　分割コンパイルとリンク</a>
+      <a href="local-variables.html">第７章　ローカル変数とスタック</a><a href="function-calls.html">第８章　関数呼び出し</a>
+      <a href="integer-representation.html">第９章　整数の表現</a><a href="pointers-and-strings.html">第１０章　ポインタと文字列</a>
+      <a href="executable-image.html" aria-current="page">第１１章　実行イメージと初期化</a>
+      <a href="linking-libraries.html">第１２章　スタティックリンクとダイナミックリンク</a>
+      <a href="type-declarations.html">第１３章　Ｃの型の構文</a>
+    </nav>
+    <nav class="contents" aria-label="この章の目次"><a href="#question">１　この章で扱う問い</a><a href="#theory">２　この章の理論</a><a href="#hands-on">３　ハンズオン</a><a href="#check">４　理解チェック</a></nav>
+    <a class="previous" href="../index.html">以前の教科書を読む</a>
+  </aside></details>
+  <main id="main">
+    <header><p class="eyebrow">第１１章</p><h1>実行イメージと初期化</h1><p class="lead">ファイルに保存するものと、起動時・実行中に用意するものを分ける。</p><p>第１０章では、文字列を .rodata に置いて、その場所を返しました。今回は、命令やデータが実行ファイルにどう入り、起動後の状態へどうつながるかを調べます。</p></header>
+    <section id="question" aria-labelledby="question-title">
+      <h2 id="question-title"><span class="number">１</span>この章で扱う問い</h2>
+      <p><strong>変数の初期値は、ファイルに書かれているのか、それとも命令を動かして作るのか？</strong></p>
+      <p>たとえば、初めから７を持つ変数と、初めは０の大きな配列を考えます。どちらも main から読めますが、その値をファイル内へ同じ方法で保存する必要はありません。また、関数を呼ぶたびに計算する初期値は、別の仕組みで用意します。</p>
+      <p>本章はリナックス x86-64 のＥＬＦ形式を対象に、既存のＣコンパイラで作ったファイルを観察します。自作コンパイラへ新しい構文は追加しません。動的リンクは入り口だけ示し、共有ライブラリとの詳しい接続は第１２章で扱います。</p>
+    </section>
+    <section id="theory" aria-labelledby="theory-title">
+      <h2 id="theory-title"><span class="number">２</span>この章の理論</h2>
+      <h3>一つのプログラムに、違う種類の初期状態を置く</h3>
+      <p><a href="labs/ch11/layout.c">今回の layout.c</a> には、関数の外側に次の定義があります。</p>
+      <pre><code>const char label[] = "ABC";
+int seed = 7;
+int zeros;
+unsigned char reserve[65536];</code></pre>
+      <p>label は文字列のバイト列、seed は７から始まる整数です。zeros と reserve は明示的な初期値を書いていません。しかし、関数の外で定義したこれらは<strong>静的記憶域期間</strong>を持ち、プログラムの実行中ずっと存在します。Ｃの規則により、初期値を省略したこれらの整数や配列要素は０になります。</p>
+      <p>一方、初期化していない自動ローカル変数が０になる保証はありません。第７章で代入前の読み出しを拒否したことと矛盾しません。名前を書いた場所や記憶域期間が違い、適用する規則が違います。</p>
+      <p>ファイル内の初期値と、動くときに計算する値を比べるため、次の関数も用意しています。</p>
+      <pre><code>static void visit(void) {
+    static unsigned count;
+    int local = seed + (int)++count;
+    printf("関数呼び出し：count=%u、local=%d\n", count, local);
+}</code></pre>
+      <p>count は関数内に見える名前ですが、static が付いているため実行中ずっと存在し、最初は０です。visit を呼ぶたびに０へ戻るわけではありません。<code>++count</code> は count を１増やして、その増やした値を使います。<code>(int)</code> は、この小さな値を int として計算する指定です。</p>
+      <p>local は呼び出すたびに用意される自動ローカル変数です。その宣言を実行するたびに、現在の seed と増やした count から値を求めます。seed が７なら、１回目は８、２回目は９です。関数定義の前の static は、その関数名をこのソースの内部で使う指定であり、変数 count の static とは着目する役割が異なります。</p>
+      <h3>実行ファイルには、内容と配置の情報がある</h3>
+      <p><strong>ＥＬＦ</strong>は、今回のオブジェクトや実行ファイルで使う形式です。実行ファイルは機械語を先頭から最後まで並べただけのものではなく、入口の位置、命令とデータの場所、読み込み方法などの情報も持ちます。</p>
+      <p><strong>セクション</strong>は、ファイル内の命令やデータを用途別にまとめる区分です。今回のビルドでは、代表的なものは次のようになります。配置はコンパイラやリンカーの選択にも依存するので、すべてのＣの変数が必ずこの表どおりになるという規則ではありません。</p>
+      <div class="table-scroll"><table><thead><tr><th>セクション</th><th>今回の内容</th><th>初期状態の用意</th></tr></thead><tbody>
+        <tr><td>.text</td><td>main や visit の命令</td><td>機械語のバイトをファイルに持つ。</td></tr>
+        <tr><td>.rodata</td><td>label の ABC と終端、表示用文字列など</td><td>読み取り専用にするデータのバイトを持つ。</td></tr>
+        <tr><td>.data</td><td>seed の初期値７</td><td>書き換え可能なデータの初期バイトを持つ。</td></tr>
+        <tr><td>.bss</td><td>zeros、reserve、count</td><td>必要な領域の大きさを記録し、メモリでは０で始める。</td></tr>
+      </tbody></table></div>
+      <p>.bss は、領域の大きさなどの情報がファイルにない、という意味ではありません。<strong>その領域を埋める０のバイト列そのものを、同じ量だけファイルへ保存しなくてよい</strong>という違いです。大きなゼロ初期化配列を置いても、その大きさと同じだけ実行ファイルが膨らむ必要はありません。</p>
+      <figure class="concept-figure"><figcaption><strong>図１　ファイルにある初期バイトと、メモリで用意するゼロ領域</strong><span>対応を示す概略図です。実際の順序、余白、サイズの縮尺は省略しています。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 300" role="img" aria-labelledby="image-title image-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="image-title">ファイルの内容と、実行時に見える内容の対応</title><desc id="image-desc">命令・読み取り専用データ・初期値7のバイトはファイルにある。ゼロ領域は必要な大きさが記録され、実行時のメモリでは全体がゼロとして使える。</desc>
+          <g fill="#e9eee5" stroke="#355d4c"><rect x="20" y="45" width="290" height="45"/><rect x="20" y="100" width="290" height="45"/><rect x="20" y="155" width="290" height="45"/><rect x="450" y="45" width="290" height="45"/><rect x="450" y="100" width="290" height="45"/><rect x="450" y="155" width="290" height="45"/><rect x="450" y="210" width="290" height="65"/></g>
+          <rect x="20" y="210" width="290" height="65" fill="#fffef9" stroke="#355d4c" stroke-dasharray="5 4"/>
+          <g text-anchor="middle"><text x="165" y="25">実行ファイル</text><text x="595" y="25">実行中の仮想メモリ</text><text x="165" y="74">命令のバイト</text><text x="595" y="74">実行できる命令</text><text x="165" y="129">文字列のバイト</text><text x="595" y="129">読み取れる文字列</text><text x="165" y="184">初期値７のバイト</text><text x="595" y="184">seed の初期値７</text><text x="165" y="237">ゼロ領域の大きさを記録</text><text x="165" y="261" class="diagram-small">０の列は格納しない</text><text x="595" y="248">zeros・reserve・count は０</text><text x="380" y="74">→</text><text x="380" y="129">→</text><text x="380" y="184">→</text><text x="380" y="248">→</text></g>
+        </svg></div>
+      </figure>
+      <h3>読み込む単位は、セクションと同じではない</h3>
+      <p>実行の準備で使う主な情報は、<strong>プログラムヘッダ</strong>という表です。この表に記載される<strong>セグメント</strong>は、メモリへ配置する範囲などを表します。一つのセグメントに、複数のセクションが含まれることがあります。</p>
+      <p>特に <code>LOAD</code> は、ファイルのどの範囲を、どの仮想アドレスに、どんなアクセス権で用意するかを表します。読み取りを R、書き込みを W、実行を E と表示する道具を、後で使います。命令を置く範囲と、書き換えるデータを置く範囲は、異なる権限にできます。</p>
+      <p><code>FileSiz</code> はその範囲がファイル内で持つバイト数、<code>MemSiz</code> はメモリ側で必要なバイト数です。後者の方が大きい場合、ファイル由来の部分の後ろに、差分を０で用意します。これが今回の .bss を含む領域で観察できる仕組みです。</p>
+      <figure class="concept-figure"><figcaption><strong>図２　同じ領域でも、ファイル上とメモリ上でサイズが違う</strong><span>数値は説明用です。実際の読み込み位置やサイズは実験で確認します。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 220" role="img" aria-labelledby="segment-title segment-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="segment-title">ファイルの16バイトに32バイトのゼロ領域を追加しメモリで48バイト使う例</title><desc id="segment-desc">ファイルにある16バイトをメモリへ対応付け、その後ろの32バイトは0で用意する。FileSizは16、MemSizは48。</desc>
+          <g fill="#e9eee5" stroke="#355d4c"><rect x="200" y="35" width="165" height="50"/><rect x="200" y="130" width="165" height="50"/></g>
+          <rect x="365" y="130" width="330" height="50" fill="#fffef9" stroke="#355d4c"/>
+          <text x="20" y="66">ファイル：１６</text><text x="20" y="161">メモリ：４８</text>
+          <g text-anchor="middle"><text x="282" y="66">初期バイト</text><text x="282" y="162">同じ内容</text><text x="530" y="162">追加の３２バイトは０</text><text x="450" y="211">メモリの大きさ ＝ ファイル由来の部分 ＋ ゼロ領域</text></g>
+          <path d="M282 90V121M276 111L282 121L288 111" fill="none" stroke="#355d4c" stroke-width="2"/>
+        </svg></div>
+      </figure>
+      <p>ここでいうアドレスは、プロセスから見える<strong>仮想アドレス</strong>です。物理メモリの場所そのものではありません。また「用意する」は、ファイル全体を直ちに別の物理メモリへコピーする、という意味でもありません。実際のページの読み込みなどはＯＳが必要に応じて行えます。この章では、プログラムから見える内容の対応を観察します。</p>
+      <h3>main は、実行ファイルの入口そのものではない</h3>
+      <p>通常のＣプログラムでは、main より前に起動処理があります。ＥＬＦには<strong>エントリポイント</strong>という、実行を開始するための位置が記録されています。今回のプログラムでは、その位置は <code>_start</code> という起動用コードに対応します。main の位置とは異なります。</p>
+      <p>さらに今回の実行ファイルは動的リンクを使い、<code>INTERP</code> に指定された動的リンカーの起動処理も関わります。その場合、ＣＰＵが最初からこの実行ファイルの _start に入る、と単純化してはいけません。必要な共有ライブラリなどの準備をした後、プログラム側の入口へ進みます。</p>
+      <figure class="concept-figure"><figcaption><strong>図３　main の前にも、後にも処理がある</strong><span>通常の動的リンクされたＣプログラムの概略です。各段階の細部は省略しています。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 330" role="img" aria-labelledby="startup-title startup-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="startup-title">起動準備からmainと終了処理への流れ</title><desc id="startup-desc">シェルから実行を要求し、ＯＳがプログラムと必要な起動用領域を用意する。動的リンカーが準備し、_startとＣの起動処理からmainへ進み、mainの返り値は終了処理を経て終了状態になる。</desc>
+          <g fill="#e9eee5" stroke="#355d4c"><rect x="120" y="10" width="520" height="45" rx="4"/><rect x="120" y="78" width="520" height="45" rx="4"/><rect x="120" y="146" width="520" height="45" rx="4"/><rect x="120" y="214" width="520" height="45" rx="4"/><rect x="120" y="282" width="520" height="40" rx="4"/></g>
+          <g text-anchor="middle"><text x="380" y="39">実行要求 → ＯＳが読み込みと実行環境を準備</text><text x="380" y="73">↓</text><text x="380" y="107">動的リンカーが必要な部品を準備</text><text x="380" y="141">↓</text><text x="380" y="175">_start → Ｃの起動処理</text><text x="380" y="209">↓</text><text x="380" y="243">main：ここで教材の本文が動く</text><text x="380" y="277">↓</text><text x="380" y="309">終了処理 → シェルへ終了状態</text></g>
+        </svg></div>
+      </figure>
+      <p>スタックも実行環境の一部として用意されます。第７章の自動ローカル変数の値は、あらかじめ .data にすべて並べられているのではなく、関数が動くときに必要な計算や保存を行います。プログラムによっては main より前に動く初期化関数もありますが、すべての初期化を main より前にまとめて行うわけではありません。</p>
+      <h3>実行中の変更は、元の初期値を書き換えるのか</h3>
+      <p>main 内で seed を４２に変えると、現在の実行中の値は４２になります。しかし、この代入だけでディスク上の実行ファイル内の７が４２に書き換わることはありません。今回の通常のデータ領域は、実行中の変更をそのまま元ファイルへ保存するための領域ではないからです。</p>
+      <p>同じ実行ファイルをもう一度起動すれば、新しい実行では再び seed は７、zeros と count は０から始まります。状態を次の実行へ残したいなら、ファイルやデータベースなどへ保存する別の処理が必要です。</p>
+      <p class="note">「初期化」という言葉だけでまとめず、①ファイルに初期バイトを持つ、②実行環境がゼロ領域を用意する、③実行するたびに式を計算する、を区別します。Ｃの static な変数に任意の関数呼び出しを初期値として書ける、という意味でもありません。本章の静的な初期値は定数です。</p>
+    </section>
+    <section id="hands-on" aria-labelledby="hands-on-title">
+      <h2 id="hands-on-title"><span class="number">３</span>ハンズオン</h2>
+      <h3>準備：観察しやすい実行ファイルを作る</h3>
+      <p>これまでと同じリナックスのコンテナ内で実行します。まだ入っていなければ、マック側のリポジトリで <code>make -f docker.mk shell</code> を実行します。</p>
+      <pre><code>cd /workspace/textbook/new/labs/ch11
+gcc -std=c11 -Wall -Wextra -O0 -fno-common -fno-pie -no-pie layout.c -o /tmp/ch11-layout</code></pre>
+      <p><code>-O0</code> は最適化を抑える指定です。<code>-fno-common</code> は今回の未初期化の大域変数を共通シンボルとして扱わない指定、<code>-fno-pie -no-pie</code> は観察のため、位置独立実行ファイルという形式を使わずに作る指定です。この教材の出力にだけ適用し、システム全体の設定を変えません。一般の製品でこの設定を推奨しているわけでもありません。</p>
+      <h3>実験１：開始時と、関数を呼んだ後の値を比べる</h3>
+      <p><strong>実行前に：</strong>seed、zeros、reserve の先頭と末尾、２回呼んだ visit の count と local を予想してください。</p>
+      <pre><code>/tmp/ch11-layout
+echo $?</code></pre>
+      <details><summary>実行後に開く：３種類の準備が見える</summary><p>開始時は seed が７、zeros が０、reserve の要素も０です。visit の１回目は count=1・local=8、２回目は count=2・local=9。最後に main が seed を４２、zeros を９、reserve の末尾を１へ変えた表示が出ます。終了状態は main が返す０で、表示中の４２などとは別です。</p></details>
+      <p>reserve のサイズは６５５３６バイトです。教材は全要素が０であることを assert で検査し、表示は先頭と末尾だけに絞っています。count が２回目に２であることから、static の変数が呼ぶたびに作り直されていないことも確認します。</p>
+      <h3>実験２：変数が、どのセクションにあるか調べる</h3>
+      <pre><code>nm -S /tmp/ch11-layout
+readelf -SW /tmp/ch11-layout</code></pre>
+      <p>nm の <code>-S</code> はシンボルの大きさも表示します。出力から seed、zeros、reserve、label を探してください。第６章の T に加えて、D は初期値を持つデータ、B はゼロ領域、R は読み取り専用データに対応します。表示の数値は１６進です。</p>
+      <p><code>readelf</code> はＥＬＦの構造を見る道具です。<code>-S</code> はセクション表、<code>-W</code> は１行を折り返さず広く表示する指定です。.bss の種類にある <code>NOBITS</code> を探します。</p>
+      <details><summary>観察後に開く：ファイルに中身を持たない領域</summary><p>今回の設定では seed は D、zeros と reserve は B、label は R です。.bss は NOBITS、つまり領域のための実データのバイト列をファイルに持たない形式です。count も通常は小文字 b と、補助的な接尾辞の付いた名前で見えます。local はこの表の大域シンボルとしては現れません。</p></details>
+      <h3>実験３：FileSiz と MemSiz を比べる</h3>
+      <pre><code>readelf -lW /tmp/ch11-layout</code></pre>
+      <p>小文字の <code>-l</code> はプログラムヘッダの表示です。LOAD の行を探し、FileSiz と MemSiz を比較します。特に RW の行に注目してください。出力の下部には、各セグメントにどのセクションが含まれるかの対応表もあります。</p>
+      <details><summary>観察後に開く：メモリ側の方が大きい理由</summary><p>検証環境の書き込み可能な LOAD では、FileSiz が <code>0x22c</code>、MemSiz が <code>0x10290</code> でした。正確な数字は環境で変わります。重要なのは後者が大きいことです。差分には reserve などのゼロ領域や配置上の余白が含まれます。差が reserve の長さと完全一致する必要はありません。</p></details>
+      <p>この表は実行中のメモリの内容を読み出したものではありません。「こう配置する」というファイル内の指示を見ています。実験１の実行時の値と組み合わせて、指示と結果の対応を確認します。</p>
+      <h3>実験４：ゼロ配列を大きくしても、ファイルは同じだけ増えるか</h3>
+      <pre><code>gcc -std=c11 -Wall -Wextra -O0 -fno-common -fno-pie -no-pie -DRESERVE=1048576 layout.c -o /tmp/ch11-large
+wc -c /tmp/ch11-layout /tmp/ch11-large
+size /tmp/ch11-layout /tmp/ch11-large
+/tmp/ch11-large</code></pre>
+      <p><code>-DRESERVE=1048576</code> は、ソースが使う配列の長さを変更する指定です。６４ＫｉＢから１ＭｉＢへ増やします。<code>wc -c</code> は実ファイルのバイト数、<code>size</code> は命令・データ・bss などの大きさをまとめて表示します。size の合計は、そのまま実ファイルの長さとは限りません。</p>
+      <details><summary>実行後に開く：増えるのは主に、実行時に必要な領域</summary><p>bss は大きくなりますが、ファイルは差分の９８３０４０バイト分も増えません。配列全体の０を保存する代わりに、必要な大きさを記録しているからです。大きい版の実行でも、初めの全要素が０であることを検査します。ファイルが小さいことと、実行時に必要な領域が小さいことは別です。</p></details>
+      <h3>実験５：実行し直すと、初期値へ戻るか</h3>
+      <pre><code>sha256sum /tmp/ch11-layout
+/tmp/ch11-layout
+sha256sum /tmp/ch11-layout
+/tmp/ch11-layout</code></pre>
+      <p><code>sha256sum</code> は、ファイル内容を比較するためのハッシュ値を表示します。実行前後の文字列が一致するか、また２回目の開始時に seed が７か４２かを観察します。</p>
+      <details><summary>実行後に開く：実行中の状態と、元ファイルの初期値は別</summary><p>ファイルのハッシュ値は変わらず、２回目も seed は７から始まります。count も最初の呼び出しでは１です。前の実行で値を変更しても、それを次の実行へ保存する処理は書いていないからです。</p></details>
+      <h3>補足の観察：入口と main の位置を比べる</h3>
+      <pre><code>readelf -h /tmp/ch11-layout
+nm /tmp/ch11-layout</code></pre>
+      <p><code>-h</code> はＥＬＦヘッダの表示です。Entry point address と、nm の _start・main の値を比べます。検証環境では入口が <code>0x401070</code>、_start も同じで、main は別の位置でした。先頭の０の数や <code>0x</code> の有無は表示上の違いです。</p>
+      <p>実験３の INTERP には動的リンカーのパスも出ます。非ＰＩＥで作っていても、共有ライブラリを使わない静的リンクという意味ではありません。この区別を次章で扱います。</p>
+      <p>全体を確認する <a href="labs/ch11/check.sh">検証スクリプト</a>は、コンテナ内の第１１章フォルダで <code>bash check.sh</code> と実行できます。初期値・再実行・ファイルの不変・配置情報と、大きい配列の結果を確認します。</p>
+    </section>
+    <section id="check" aria-labelledby="check-title">
+      <h2 id="check-title"><span class="number">４</span>理解チェック</h2>
+      <h3>.bss が NOBITS なら、その変数は実行中にも存在しないか？</h3>
+      <details><summary>解説を読む</summary><p>存在します。０で始める領域の実データをファイルに格納しないだけで、メモリ側には必要な領域を用意します。大きさや配置の情報は残っています。</p></details>
+      <h3>セクション表だけが、ＯＳの読み込み指示なのか？</h3>
+      <details><summary>解説を読む</summary><p>違います。読み込みは主にプログラムヘッダのセグメント情報を使います。セクションは命令やデータの区分で、複数のセクションが一つの LOAD に入る場合があります。</p></details>
+      <h3>関数内の static count と自動変数 local は、いつ初期化されるか？</h3>
+      <details><summary>解説を読む</summary><p>今回の count は静的記憶域期間を持ち、初めは０で、呼び出し間でも値を保ちます。local の初期化式は、その宣言に到達するたびに実行します。名前がどちらも関数内にあっても、存続期間は同じではありません。</p></details>
+      <h3>大域変数が０になるなら、初期化していない自動変数も０か？</h3>
+      <details><summary>解説を読む</summary><p>その保証はありません。静的記憶域期間の初期化規則を、自動ローカル変数に当てはめてはいけません。未初期化の値を読んで偶然の結果を確かめる実験はしません。</p></details>
+      <h3>seed=42 を実行した後、元の実行ファイルも４２を初期値に持つか？</h3>
+      <details><summary>解説を読む</summary><p>いいえ。今回の代入は実行中のデータを変えるだけです。元ファイルに保存する別の処理がなければ、新しい実行では元の初期値７から始まります。</p></details>
+      <h3>main がエントリポイントではないのはなぜか？</h3>
+      <details><summary>解説を読む</summary><p>Ｃの関数として main を動かす前に、実行環境や起動処理が必要だからです。今回の実行ファイルの入口は _start で、その前に動的リンカーの準備もあります。main から戻った後にも終了処理が続きます。</p></details>
+      <div class="sources"><h3>参照先</h3><p><a href="https://refspecs.linuxfoundation.org/elf/gabi4+/ch5.pheader.html">ＥＬＦ仕様：プログラムヘッダ、読み込みセグメントとゼロ領域</a>。各数値や名前は教材のビルド結果でも確認しています。ＯＳや実行形式が変われば、同じＣの意味を別の配置で実現することもあります。</p><p>教材のリナックス環境で、初期値、静的・自動変数の状態、.bss、LOAD のサイズ、再実行とファイル内容の不変を検証しています。</p></div>
+    </section>
+    <footer><nav class="chapter-navigation" aria-label="前後の章"><a class="chapter-prev" href="pointers-and-strings.html" rel="prev">第１０章　ポインタと文字列</a><a class="chapter-next" href="linking-libraries.html" rel="next">第１２章　スタティックリンクとダイナミックリンク</a></nav></footer>
+  </main>
+</body>
+</html>

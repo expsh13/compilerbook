@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ライブラリのコードを取り込む場合と、起動時に結び付ける場合を比較する。">
+  <title>第１２章　スタティックリンクとダイナミックリンク｜実験で理解するコンパイラ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">本文へ移動</a>
+  <details class="sidebar"><summary>目次</summary><aside>
+    <p class="brand">実験で理解する<br>コンパイラ</p><p class="edition">新しい教科書</p>
+    <nav aria-label="本の目次">
+      <a href="contents.html">目次　全体の章立て</a><a href="index.html">序章　本の構成</a>
+      <a href="machine-code.html">第１章　機械語とアセンブラ</a><a href="minimal-compiler.html">第２章　最小のコンパイラ</a>
+      <a href="tokenization.html">第３章　字句解析</a><a href="parsing.html">第４章　構文解析</a>
+      <a href="code-generation.html">第５章　式のコード生成</a><a href="separate-compilation.html">第６章　分割コンパイルとリンク</a>
+      <a href="local-variables.html">第７章　ローカル変数とスタック</a><a href="function-calls.html">第８章　関数呼び出し</a>
+      <a href="integer-representation.html">第９章　整数の表現</a><a href="pointers-and-strings.html">第１０章　ポインタと文字列</a>
+      <a href="executable-image.html">第１１章　実行イメージと初期化</a>
+      <a href="linking-libraries.html" aria-current="page">第１２章　スタティックリンクとダイナミックリンク</a>
+      <a href="type-declarations.html">第１３章　Ｃの型の構文</a>
+    </nav>
+    <nav class="contents" aria-label="この章の目次"><a href="#question">１　この章で扱う問い</a><a href="#theory">２　この章の理論</a><a href="#hands-on">３　ハンズオン</a><a href="#check">４　理解チェック</a></nav>
+    <a class="previous" href="../index.html">以前の教科書を読む</a>
+  </aside></details>
+  <main id="main">
+
+<header><p class="eyebrow">第１２章</p><h1>スタティックリンクと<br>ダイナミックリンク</h1><p class="lead">関数の実体を取り込むか、外に置いたまま結び付けるか。</p><p>第６章では別々のオブジェクトファイルを結合し、第１１章では実行ファイルがメモリへ用意される過程を見ました。今回はその間にある「ライブラリとの結び付き」を調べます。</p></header>
+<section id="question"><h2><span class="number">１</span>この章で扱う問い</h2>
+<p><strong>実行ファイルを作り直していないのに、呼び出す関数の結果が変わることはあるか？</strong></p>
+<p>７を返す answer という関数を、別ファイルへ置きます。同じ呼び出し側から二つの実行ファイルを作り、後で関数を４２を返すものへ差し替えます。どちらが変わるかを予想し、ファイル内の情報と実際の出力を照合します。</p>
+<p>対象はリナックス x86-64、ＧＣＣとＥＬＦ形式です。自作コンパイラに構文を追加する章ではありません。自作コンパイラが出したコードも、外部関数を使うときには、このようなリンクの仕組みにつながります。</p></section>
+<section id="theory"><h2><span class="number">２</span>この章の理論</h2>
+<h3>宣言だけでは、関数の命令は存在しない</h3>
+<pre><code>int answer(void);
+int main(void) {
+    printf("%d\n", answer());
+    return 0;
+}</code></pre>
+<p>これは呼び出し側の抜粋です。完全な <a href="labs/ch12/main.c">main.c</a> には stdio.h の読み込みもあります。<code>int answer(void);</code> は「引数なし、戻り値は int」と伝える宣言で、関数の本体ではありません。本体は <a href="labs/ch12/answer.c">answer.c</a> にあり、最初は７を返します。</p>
+<p>main.c を <code>-c</code> で変換すると main.o ができます。しかし、そこには answer の本体がありません。名前と、後で呼び出し先を結び付けるための情報が残ります。第６章の「未解決の参照」です。ここから実体を用意する方法を二つ比較します。</p>
+<h3>静的リンク：必要な部品を実行ファイルへ取り込む</h3>
+<p><strong>スタティックリンク（静的リンク）</strong>では、リンク時に必要なオブジェクトのコードやデータを出力ファイルへ取り込み、参照を結び付けます。<code>.a</code> はオブジェクトファイルをまとめたアーカイブです。今回の libanswer.a には answer.o を一つだけ入れます。</p>
+<p>通常、アーカイブの全メンバーを無条件に取り込むのではなく、未解決の名前を満たすメンバーを選びます。今回なら main.o が必要としている answer を定義する answer.o が選ばれます。出来上がった archive-app は answer の実体を持つため、実行時に libanswer.a を読み直す必要はありません。</p>
+<figure class="concept-figure"><figcaption><strong>図１　静的リンクでは、作成時に実体を取り込む</strong></figcaption><div class="call-return-diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 220" role="img" aria-labelledby="static-figure"><title id="static-figure">図１　静的リンクでは、作成時に実体を取り込む</title><g><rect x="15" y="15" width="315" height="70" rx="6" fill="#e9eee5" stroke="#355d4c"/><rect x="425" y="15" width="320" height="70" rx="6" fill="#fffef9" stroke="#355d4c"/><text x="172" y="44" text-anchor="middle">main.o ＋ libanswer.a</text><text x="172" y="69" text-anchor="middle" class="diagram-small">呼び出し側 ＋ answer.o</text><text x="380" y="55" text-anchor="middle">→</text><text x="585" y="44" text-anchor="middle">リンク時に結合</text><text x="585" y="69" text-anchor="middle" class="diagram-small">必要な命令・データを取り込む</text></g><g><rect x="15" y="115" width="315" height="70" rx="6" fill="#e9eee5" stroke="#355d4c"/><rect x="425" y="115" width="320" height="70" rx="6" fill="#fffef9" stroke="#355d4c"/><text x="172" y="144" text-anchor="middle">完成した archive-app</text><text x="172" y="169" text-anchor="middle" class="diagram-small">main と answer の実体を持つ</text><text x="380" y="155" text-anchor="middle">→</text><text x="585" y="144" text-anchor="middle">実行：７を表示</text><text x="585" y="169" text-anchor="middle" class="diagram-small">元の .a を実行時には使わない</text></g></svg></div></figure>
+<p class="note">ここで「静的」なのは answer との結び付きです。今回の archive-app は、標準Ｃライブラリについては通常どおり動的リンクします。「.a を一つ使った」ことと「プログラム全体を完全に静的リンクした」ことは違います。全体を対象とする <code>-static</code> は今回使いません。</p>
+<h3>動的リンク：実体を別ファイルに置いておく</h3>
+<p><strong>ダイナミックリンク（動的リンク）</strong>では、共有ライブラリ <code>.so</code> の実体を、実行ファイルの外に残します。ビルド時のリンカーはライブラリを調べ、必要なライブラリの名前や、実行時に参照を解決するための情報を実行ファイルへ記録します。ビルド時のリンクがなくなるわけではありません。</p>
+<p>起動時には、第１１章で出てきた<strong>動的リンカー</strong>が共有ライブラリを見つけ、メモリへ用意し、関数などの参照を結び付けます。関数の結び付けを初回呼び出しまで遅らせる方式もあります。いずれも、Ｃソースを起動のたびにコンパイルするのではなく、すでに機械語になった部品を接続します。</p>
+<figure class="concept-figure"><figcaption><strong>図２　動的リンクでは、ビルドと起動で役割を分ける</strong></figcaption><div class="call-return-diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 320" role="img" aria-labelledby="dynamic-figure"><title id="dynamic-figure">図２　動的リンクでは、ビルドと起動で役割を分ける</title><g><rect x="15" y="15" width="315" height="70" rx="6" fill="#e9eee5" stroke="#355d4c"/><rect x="425" y="15" width="320" height="70" rx="6" fill="#fffef9" stroke="#355d4c"/><text x="172" y="44" text-anchor="middle">ビルド時のリンカー</text><text x="172" y="69" text-anchor="middle" class="diagram-small">main.o と libanswer.so を調べる</text><text x="380" y="55" text-anchor="middle">→</text><text x="585" y="44" text-anchor="middle">shared-app を作成</text><text x="585" y="69" text-anchor="middle" class="diagram-small">依存する名前と参照情報を記録</text></g><g><rect x="15" y="115" width="315" height="70" rx="6" fill="#e9eee5" stroke="#355d4c"/><rect x="425" y="115" width="320" height="70" rx="6" fill="#fffef9" stroke="#355d4c"/><text x="172" y="144" text-anchor="middle">起動時の動的リンカー</text><text x="172" y="169" text-anchor="middle" class="diagram-small">libanswer.so を検索・読み込み</text><text x="380" y="155" text-anchor="middle">→</text><text x="585" y="144" text-anchor="middle">answer の実体へ接続</text><text x="585" y="169" text-anchor="middle" class="diagram-small">実体は共有ライブラリ側にある</text></g><g><rect x="15" y="215" width="315" height="70" rx="6" fill="#e9eee5" stroke="#355d4c"/><rect x="425" y="215" width="320" height="70" rx="6" fill="#fffef9" stroke="#355d4c"/><text x="172" y="244" text-anchor="middle">shared-app の main</text><text x="172" y="269" text-anchor="middle" class="diagram-small">answer を呼び出す</text><text x="380" y="255" text-anchor="middle">→</text><text x="585" y="244" text-anchor="middle">ライブラリ内の answer</text><text x="585" y="269" text-anchor="middle" class="diagram-small">返り値を main が表示する</text></g></svg></div></figure>
+<h3>名前を探す場所も、二段階ある</h3>
+<p>ビルド時の <code>-L</code> は、リンカーがライブラリを探すディレクトリを増やす指定です。<code>-lanswer</code> は libanswer という名前のライブラリを選ぶ指定で、今回の環境では同じ場所に .so と .a があると通常は .so が選ばれます。静的側は曖昧さを避け、.a のパスを直接渡します。</p>
+<p><strong>-L を書いただけでは、起動時の検索先は設定されません。</strong>今回は <code>-Wl,-rpath,'$ORIGIN'</code> で実行ファイルのあるディレクトリを検索先として記録します。<code>-Wl,</code> は後続の指定をＧＣＣからリンカーへ渡す記法です。<code>$ORIGIN</code> は実行時の仕組みが解釈する印で、シェルに先に展開させないため単一引用符で囲みます。現在の作業ディレクトリ、という意味ではありません。</p>
+<p>現代のＧＮＵの環境では、この検索先は通常 <code>RUNPATH</code> として見えます。環境変数やシステムの検索先も関係しますが、実験では同じディレクトリに置いた自作ライブラリだけを差し替えます。検索先を不特定の人が書き換えられる場所に設定する運用は避けてください。</p>
+<h3>差し替えられるのは、互換性が保たれる場合</h3>
+<p>本章では <code>int answer(void)</code> の名前・引数・戻り値の型を変えず、返す数値だけを変えます。動的側は次に起動したとき新しい実体を使いますが、静的側には以前取り込んだ命令が残ります。</p>
+<figure class="concept-figure"><figcaption><strong>図３　共有ライブラリだけを４２へ差し替えた後</strong></figcaption><div class="call-return-diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 220" role="img" aria-labelledby="replace-figure"><title id="replace-figure">図３　共有ライブラリだけを４２へ差し替えた後</title><g><rect x="15" y="15" width="315" height="70" rx="6" fill="#e9eee5" stroke="#355d4c"/><rect x="425" y="15" width="320" height="70" rx="6" fill="#fffef9" stroke="#355d4c"/><text x="172" y="44" text-anchor="middle">archive-app を再実行</text><text x="172" y="69" text-anchor="middle" class="diagram-small">取り込んだ answer は変更なし</text><text x="380" y="55" text-anchor="middle">→</text><text x="585" y="44" text-anchor="middle">７を表示</text><text x="585" y="69" text-anchor="middle" class="diagram-small">変更には再リンクが必要</text></g><g><rect x="15" y="115" width="315" height="70" rx="6" fill="#e9eee5" stroke="#355d4c"/><rect x="425" y="115" width="320" height="70" rx="6" fill="#fffef9" stroke="#355d4c"/><text x="172" y="144" text-anchor="middle">shared-app を新しく起動</text><text x="172" y="169" text-anchor="middle" class="diagram-small">新しい libanswer.so を読み込む</text><text x="380" y="155" text-anchor="middle">→</text><text x="585" y="144" text-anchor="middle">４２を表示</text><text x="585" y="169" text-anchor="middle" class="diagram-small">実行ファイル本体は変更なし</text></g></svg></div></figure>
+<p>実行中のプロセスが自動で新しいコードへ切り替わる、という実験ではありません。また同じ名前でも、引数や戻り値の受け渡し規則が変われば安全に交換できません。こうしたバイナリ間の約束をＡＢＩと呼びます。動的リンクには更新の利点がある一方、必要なライブラリの配布・検索・互換性を管理する責任があります。</p>
+</section>
+<section id="hands-on"><h2><span class="number">３</span>ハンズオン</h2>
+<h3>準備：コンテナ内で実行する</h3>
+<p>第１章の手順でリナックスコンテナのシェルへ入り、次を実行します。以下の生成物は一時ディレクトリに置き、教材のソースやシステムのライブラリは変更しません。</p>
+<pre><code>cd /workspace/textbook/new/labs/ch12
+work=$(mktemp -d /tmp/compilerbook-ch12.XXXXXX)
+echo "$work"</code></pre>
+<p><code>mktemp -d</code> は重複しない作業ディレクトリを作り、そのパスを表示します。<code>$(...)</code> でその出力を変数 work に保存しています。同じシェルで順番に進めてください。</p>
+<h3>実験１：同じ関数から、二種類のライブラリを作る</h3>
+<pre><code>gcc -std=c11 -Wall -Wextra -c main.c -o "$work/main.o"
+gcc -std=c11 -Wall -Wextra -c answer.c -o "$work/answer.o"
+ar rcs "$work/libanswer.a" "$work/answer.o"
+gcc -fPIC -shared -Wl,-soname,libanswer.so answer.c -o "$work/libanswer.so"
+ar t "$work/libanswer.a"</code></pre>
+<p>最初の２行はコンパイルとアセンブルを行い、リンク前の .o を作ります。<code>ar rcs</code> は部品をアーカイブへ登録し、名前を検索する索引も作ります。最後の <code>ar t</code> はその中身の名前を一覧にし、answer.o が入ったことを確認します。</p>
+<p><code>-fPIC</code> は、配置場所が変わっても扱える位置独立なコードを生成する指定です。<code>-shared</code> は共有ライブラリを作ります。<code>-soname</code> は、このライブラリの識別名を libanswer.so とします。共有ライブラリをリンクした実行ファイルの依存情報には、この名前が使われます。</p>
+<h3>実験２：二つの実行ファイルを作り、結果を比べる</h3>
+<pre><code>gcc "$work/main.o" "$work/libanswer.a" -o "$work/archive-app"
+gcc "$work/main.o" -L"$work" -lanswer -Wl,-rpath,'$ORIGIN' -o "$work/shared-app"
+"$work/archive-app"
+echo $?
+"$work/shared-app"
+echo $?</code></pre>
+<p>部品を必要とする main.o を、ライブラリより前に置きます。特にアーカイブの検索は入力順の影響を受けるので、この順番を保ってください。実行前に、画面に表示される数値と終了状態を別々に予想します。</p>
+<details><summary>実行後に開く：何が同じだったか</summary><p>どちらも７を表示し、終了状態は０です。answer の７を printf が表示し、main の <code>return 0;</code> が成功を示します。<code>echo $?</code> が見るのは直前に実行したプログラムの終了状態で、printf が表示した７ではありません。出力が同じでも、関数の置き場所は異なります。</p></details>
+<h3>実験３：ファイル内の参照を読む</h3>
+<pre><code>nm "$work/archive-app" | grep answer
+nm -D "$work/shared-app" | grep answer
+nm -D "$work/libanswer.so" | grep answer
+readelf -d "$work/shared-app"
+readelf -d "$work/archive-app"</code></pre>
+<p><code>nm</code> は名前の表を表示します。<code>-D</code> は動的リンク用の表を選びます。縦棒は左の出力を右へ渡し、grep で answer を含む行だけを選んでいます。静的側は <code>T answer</code>、動的側の実行ファイルは <code>U answer</code>、共有ライブラリ側は <code>T answer</code> を探します。T はコード領域に定義があること、U はそのファイル自身には定義がないことを示します。</p>
+<p><code>readelf -d</code> は動的リンク用の情報を読みます。shared-app の <code>NEEDED</code> に libanswer.so、検索先に $ORIGIN があるか確認します。archive-app に libanswer.so の依存はありませんが、libc.so.6 などの依存があっても矛盾ではありません。</p>
+<details><summary>実行後に開く：U が残るのはエラーか</summary><p>動的リンク用に外部の定義を参照しているため、完成した実行ファイルでも U が残ります。今回なら libanswer.so の定義が解決先です。「ファイル内に定義がない」と「実行できない」は同じではありません。</p></details>
+<h3>実験４：共有ライブラリだけを変更する</h3>
+<p>先に結果を予想します。二つの実行ファイルは作り直さず、answer の返す値だけを４２にした共有ライブラリを作ります。すでに実行したプログラムが終了してから進めます。</p>
+<pre><code>sha256sum "$work/archive-app" "$work/shared-app" > "$work/before"
+gcc -fPIC -shared -DVALUE=42 -Wl,-soname,libanswer.so answer.c -o "$work/libanswer.so"
+"$work/archive-app"
+"$work/shared-app"
+sha256sum "$work/archive-app" "$work/shared-app" > "$work/after"
+cmp "$work/before" "$work/after"</code></pre>
+<p><code>-DVALUE=42</code> はソース内の VALUE を４２としてコンパイルする指定です。sha256sum はファイル内容の指紋を計算します。その出力を保存し、cmp で変更前後を比較します。一致なら cmp は何も表示せず終了します。</p>
+<details><summary>実行後に開く：何が変わり、何が変わらなかったか</summary><p>archive-app は７、shared-app は４２を表示します。二つの実行ファイル本体は変化していません。違いは、静的側には古い実体が取り込まれ、動的側は今回読み込んだ .so の実体を使うことです。.a の内容も今回は変更していません。</p></details>
+<h3>実験５：必要な共有ライブラリが見つからない場合</h3>
+<p>削除せず、一時的に別名へ移します。動的側が失敗することを確認したら、元の名前に戻します。</p>
+<pre><code>mv "$work/libanswer.so" "$work/libanswer.hidden"
+"$work/shared-app"
+echo $?
+"$work/archive-app"
+mv "$work/libanswer.hidden" "$work/libanswer.so"
+"$work/shared-app"</code></pre>
+<p>通常の教材環境では shared-app はライブラリが見つからないというエラーになり、main の表示処理へ到達しません。終了状態は非０です。一方、archive-app は７を表示します。元へ戻すと shared-app は４２を表示します。</p>
+<p class="note">失敗を観察するコマンドが含まれるため、この実験を途中で停止する設定のスクリプトへそのまま貼らず、対話シェルで一つずつ実行してください。システムのライブラリには触れません。</p>
+<p>教材と同じ観察をまとめて確かめるには <code>bash check.sh</code> を実行します。別の一時ディレクトリで検証し、上の作業には干渉しません。</p>
+</section>
+<section id="check"><h2><span class="number">４</span>理解チェック</h2>
+<h3>二つとも７を表示しただけで、リンク方法が同じと言えるか？</h3>
+<details><summary>解説を読む</summary><p>言えません。動作の結果と実体の置き場所は別です。名前の表、NEEDED、差し替え後の動作を組み合わせて判別します。</p></details>
+<h3>-L を指定したのに、起動時に .so が見つからないのはなぜか？</h3>
+<details><summary>解説を読む</summary><p>-L はビルド時の検索先だからです。起動時の動的リンカーには別の検索規則があります。今回の RUNPATH はそのための設定です。</p></details>
+<h3>libanswer.a を更新するだけで、すでに作った archive-app の答えは変わるか？</h3>
+<details><summary>解説を読む</summary><p>変わりません。古いコードが取り込まれています。新しいアーカイブと再リンクして実行ファイルを作り直す必要があります。main.c の内容が同じなら main.o を再利用できます。</p></details>
+<h3>共有ライブラリの関数名さえ同じなら、引数を増やしても交換できるか？</h3>
+<details><summary>解説を読む</summary><p>安全に交換できません。呼び出し側の命令は以前の引数の渡し方のままです。名前の一致だけではＡＢＩの互換性を保証しません。</p></details>
+<h3>自作コンパイラが外部関数への call を出せば、.so の探索も担当したことになるか？</h3>
+<details><summary>解説を読む</summary><p>いいえ。コンパイラのコード生成、ビルド時のリンク、起動時の読み込みと参照解決は別の役割です。出した参照を、後続の道具と実行環境が結び付けます。</p></details>
+<div class="sources"><h3>参照先</h3><p><a href="https://sourceware.org/binutils/docs/ld/Options.html">ＧＮＵリンカーのオプション</a>と<a href="https://refspecs.linuxfoundation.org/elf/gabi4+/ch5.dynamic.html">ＥＬＦ仕様の動的リンク</a>。本章のコマンドと出力の関係は、教材のリナックス環境でも検証します。</p></div>
+</section>
+<footer><nav class="chapter-navigation" aria-label="前後の章"><a class="chapter-prev" href="executable-image.html" rel="prev">第１１章　実行イメージと初期化</a><a class="chapter-next" href="type-declarations.html" rel="next">第１３章　Ｃの型の構文</a></nav></footer>
+</main></body></html>

@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="構文木から四則演算の命令を生成し、途中結果をスタックに保存する仕組みを実験する。">
+  <title>第５章　式のコード生成｜実験で理解するコンパイラ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">本文へ移動</a>
+  <details class="sidebar"><summary>目次</summary><aside>
+    <p class="brand">実験で理解する<br>コンパイラ</p><p class="edition">新しい教科書</p>
+    <nav aria-label="本の目次">
+      <a href="contents.html">目次　全体の章立て</a><a href="index.html">序章　本の構成</a>
+      <a href="machine-code.html">第１章　機械語とアセンブラ</a><a href="minimal-compiler.html">第２章　最小のコンパイラ</a>
+      <a href="tokenization.html">第３章　字句解析</a><a href="parsing.html">第４章　構文解析</a>
+      <a href="code-generation.html" aria-current="page">第５章　式のコード生成</a>
+      <a href="separate-compilation.html">第６章　分割コンパイルとリンク</a>
+      <a href="local-variables.html">第７章　ローカル変数とスタック</a>
+      <a href="function-calls.html">第８章　関数呼び出し</a>
+      <a href="integer-representation.html">第９章　整数の表現</a>
+      <a href="pointers-and-strings.html">第１０章　ポインタと文字列</a>
+      <a href="executable-image.html">第１１章　実行イメージと初期化</a>
+      <a href="linking-libraries.html">第１２章　スタティックリンクとダイナミックリンク</a>
+      <a href="type-declarations.html">第１３章　Ｃの型の構文</a>
+    </nav>
+    <nav class="contents" aria-label="この章の目次"><a href="#question">１　この章で扱う問い</a><a href="#theory">２　この章の理論</a><a href="#hands-on">３　ハンズオン</a><a href="#check">４　理解チェック</a></nav>
+    <a class="previous" href="../index.html">以前の教科書を読む</a>
+  </aside></details>
+  <main id="main">
+    <header><p class="eyebrow">第５章</p><h1>式のコード生成</h1><p class="lead">木が表す計算の順序を、ＣＰＵが実行する命令の並びに変える。</p><p>前章では式の構造が見えるようになりました。今回は、その木を使ってアセンブリを出力します。第２章では数一つしか扱えなかったコンパイラが、括弧を含む四則演算を扱えるようになります。</p></header>
+    <section id="question" aria-labelledby="question-title">
+      <h2 id="question-title"><span class="number">１</span>この章で扱う問い</h2>
+      <p><strong>式の構造から、途中結果を失わずに計算する命令をどう作るか？</strong></p>
+      <p><code>2+3*4</code> の木は、足し算の右の子に掛け算を持っています。最後に足すには、２と、３×４の結果の両方が必要です。しかし、どちらの計算にも <code>rax</code> を使うと、右側の計算中に左側の値が上書きされます。「どの演算を先にするか」だけでなく、「待っている結果をどこに置くか」も決めなければなりません。</p>
+      <p>前提は、第１章のレジスタと <code>ret</code>、第２章のコンパイルから実行までの流れ、第４章の構文木です。スタックへの値の保存と取り出しは、この章で説明します。</p>
+    </section>
+    <section id="theory" aria-labelledby="theory-title">
+      <h2 id="theory-title"><span class="number">２</span>この章の理論</h2>
+      <h3>構造を決める工程と、命令を作る工程を分ける</h3>
+      <p><strong>コード生成</strong>は、構文木などの情報を使って、目的の計算を実行するコードを作る工程です。本章では、出力先のコードを x86-64 のアセンブリにします。字句解析と構文解析は前章の実装を引き継ぎ、木を表示していた部分を、命令を出力する処理に置き換えます。</p>
+      <figure class="concept-figure"><figcaption><strong>図１　命令を作るときと、命令が動くとき</strong><span>下へ進むごとに、扱うものと働くプログラムが変わります。</span></figcaption>
+        <div class="translation-flow">
+          <div class="flow-stage"><strong>入力の文字列</strong><code>2+3*4</code><p>自作コンパイラが字句解析・構文解析する</p></div>
+          <div class="flow-arrow">↓ 構文木になる</div>
+          <div class="flow-stage focus-stage"><strong>根が＋、右の子が＊の木</strong><p>自作コンパイラが木をたどり、命令の文字列を出力する</p></div>
+          <div class="flow-arrow">↓ アセンブリを保存する</div>
+          <div class="flow-stage"><strong>アセンブリのファイル</strong><p>既存のアセンブラとリンカーが実行ファイルにする（gcc から呼び出す）</p></div>
+          <div class="flow-arrow">↓ 実行ファイルを起動する</div>
+          <div class="flow-stage"><strong>ＣＰＵが生成された命令を実行</strong><p>ここでレジスタの値が変わり、式の結果１４を返す</p></div>
+        </div>
+        <p class="figure-takeaway">コンパイラ内の <code>printf</code> は実行されます。しかし、その出力にある <code>add</code> などは、その時点では文字列です。表示しただけでは計算命令として動きません。</p>
+      </figure>
+      <h3>どの部分木も「結果を rax に残す」と決める</h3>
+      <p>木の一つのノードと、その下につながる部分を<strong>部分木</strong>と呼びます。数一つも部分木です。コード生成では、どの部分木にも同じ約束を設けると、内側の細かい構造を知らなくても結果を組み合わせられます。</p>
+      <p>本章の約束は、<strong>その部分木の命令を実行し終えると、結果が rax に入り、一時保存のために使ったスタックは開始時の状態に戻る</strong>ことです。たとえば右の子が数３でも、複雑な掛け算でも、最後には <code>rax</code> を読めば結果がわかります。</p>
+      <p>数の葉なら <code>mov rax, 数</code> を出せば、この約束を満たせます。演算ノードなら、左の子の命令、右の子の命令、両者を組み合わせる命令が必要です。ただし、その間に左の結果を保管する場所が要ります。</p>
+      <h3>スタックは、後で使う値を重ねて保存する場所</h3>
+      <p><strong>スタック</strong>は、最後に保存した値から取り出す使い方をするメモリ領域です。今回の <code>push rax</code> は <code>rax</code> の値をスタックに保存し、<code>pop rax</code> は最後に保存した値を <code>rax</code> に取り出します。<code>push</code> をしても、元の <code>rax</code> の値は消えません。</p>
+      <p>保存位置を管理するレジスタが <code>rsp</code> です。今回の６４ビットの <code>push</code> は <code>rsp</code> を８バイト分小さくし、その位置に値を置きます。<code>pop</code> はその位置の値を読み、<code>rsp</code> を８バイト分大きくして戻します。取り出した場所のメモリを０に消すのではなく、次に使う位置を戻しています。</p>
+      <figure class="concept-figure"><figcaption><strong>図２　保存した順と逆の順で取り出す</strong><span>上が最後に保存した値です。箱は論理的な積み重ねで、アドレスの縮尺は表していません。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 335" role="img" aria-labelledby="stack-order-title stack-order-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="stack-order-title">２、３の順に保存し、３を先に取り出す</title>
+          <desc id="stack-order-desc">左から四つの時点を表す。開始時は戻り先だけ。２を保存するとその上に２が積まれ、３を保存するとさらに３が積まれる。pop rax で３がレジスタへ移り、スタックには２と戻り先が残る。</desc>
+          <defs><marker id="stack-order-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#355d4c"/></marker></defs>
+          <g text-anchor="middle" font-weight="600">
+            <text x="90" y="28">① 開始時</text><text x="280" y="28">② ２を保存</text><text x="470" y="28">③ ３を保存</text><text x="660" y="28">④ ３を取り出す</text>
+          </g>
+          <g text-anchor="middle" class="diagram-small">
+            <text x="280" y="55">push rax（rax は２）</text><text x="470" y="55">push rax（rax は３）</text><text x="660" y="55">pop rax</text>
+          </g>
+          <g fill="#f8f6f0" stroke="#355d4c" stroke-width="1.5">
+            <rect x="20" y="239" width="140" height="52" rx="3"/><rect x="210" y="239" width="140" height="52" rx="3"/><rect x="400" y="239" width="140" height="52" rx="3"/><rect x="590" y="239" width="140" height="52" rx="3"/>
+          </g>
+          <g fill="#e9eee5" stroke="#355d4c" stroke-width="1.5">
+            <rect x="210" y="181" width="140" height="52" rx="3"/><rect x="400" y="181" width="140" height="52" rx="3"/><rect x="590" y="181" width="140" height="52" rx="3"/>
+            <rect x="400" y="123" width="140" height="52" rx="3"/>
+          </g>
+          <rect x="590" y="123" width="140" height="52" rx="8" fill="#fffef9" stroke="#a3452c" stroke-width="2"/>
+          <g text-anchor="middle">
+            <text x="90" y="272">戻り先</text><text x="280" y="272">戻り先</text><text x="470" y="272">戻り先</text><text x="660" y="272">戻り先</text>
+            <text x="280" y="214" class="diagram-code">2</text><text x="470" y="214" class="diagram-code">2</text><text x="660" y="214" class="diagram-code">2</text>
+            <text x="470" y="156" class="diagram-code">3</text><text x="660" y="156" class="diagram-code">rax = 3</text>
+            <text x="660" y="105" class="diagram-small">取り出し先のレジスタ</text>
+            <text x="90" y="319" class="diagram-small">スタック</text><text x="280" y="319" class="diagram-small">スタック</text><text x="470" y="319" class="diagram-small">スタック</text><text x="660" y="319" class="diagram-small">２と戻り先は残る</text>
+          </g>
+          <path d="M543 149H585" fill="none" stroke="#355d4c" stroke-width="2" marker-end="url(#stack-order-arrow)"/>
+        </svg></div>
+        <p class="figure-takeaway">内側の計算で保存した３を取り出しても、外側が保存した２は残ります。これが、入れ子の式の途中結果を守れる理由です。</p>
+      </figure>
+      <p>「戻り先」は、<code>main</code> が呼ばれたときに保存された戻りアドレスです。式のために保存した値をすべて取り出してから <code>ret</code> に進めば、<code>ret</code> は元の戻りアドレスを使えます。保存した値を残したままだと、それを戻りアドレスとして扱ってしまうため、<code>push</code> と <code>pop</code> の対応は計算結果だけでなく正常に戻るためにも必要です。</p>
+      <h3>左を保存し、右を計算してから組み合わせる</h3>
+      <p>演算ノードでは、次の順に命令を出します。<code>rdi</code> は、左右の結果がそろった最後の段階で、右の値を一時的に置くレジスタとして使います。</p>
+      <ol><li>左の部分木の命令を出す。実行後、左の結果が <code>rax</code> に入る。</li><li><code>push rax</code> を出す。左の結果を保存する。</li><li>右の部分木の命令を出す。実行後、右の結果が <code>rax</code> に入る。</li><li><code>mov rdi, rax</code> を出す。右の結果を <code>rdi</code> に移す。</li><li><code>pop rax</code> を出す。保存していた左の結果を <code>rax</code> に戻す。</li><li>演算の命令を出す。左右を組み合わせた結果を <code>rax</code> に残す。</li></ol>
+      <p>右の部分木も同じ約束を守るため、右の計算が終わったときには、左の値がスタックの先頭に残っています。これを取り出せば、親の演算も約束を守れます。最初から左の値を <code>rdi</code> に置いて待つだけでは、右の部分木も <code>rdi</code> を使うため上書きされてしまいます。</p>
+      <h3>四則演算を命令に対応させる</h3>
+      <p>次の表は、<code>rax</code> に左の結果、<code>rdi</code> に右の結果がそろった後の処理です。</p>
+      <div class="table-scroll"><table><thead><tr><th>演算</th><th>出力する命令</th><th>実行すると何が起きるか</th></tr></thead><tbody>
+        <tr><td>＋</td><td><code>add rax, rdi</code></td><td>左右の和を rax に入れる。</td></tr>
+        <tr><td>－</td><td><code>sub rax, rdi</code></td><td>左から右を引いた値を rax に入れる。</td></tr>
+        <tr><td>＊</td><td><code>imul rax, rdi</code></td><td>左右の積を rax に入れる。</td></tr>
+        <tr><td>／</td><td><code>cqo</code> の後に <code>idiv rdi</code></td><td>左を右で割り、整数の商を rax に入れる。</td></tr>
+      </tbody></table></div>
+      <p>割り算だけ準備があるのは、<code>idiv rdi</code> が、割られる値を <code>rax</code> 一つではなく、<code>rdx</code> を上位、<code>rax</code> を下位とする１２８ビットの組で読むためです。<code>cqo</code> は <code>rax</code> の符号を保ったままその幅へ広げる命令です。正または０なら <code>rdx</code> をすべて０、負ならすべて１にします。<code>rax</code> 自体の値は変えません。</p>
+      <p><code>idiv</code> の後、商は <code>rax</code>、余りは <code>rdx</code> に入ります。本章では余りを使いません。整数の割り算なので <code>8/3</code> は２です。負の商も０に近づく方向へ端数を捨てるため、<code>(0-9)/2</code> は－４になります。引き算と割り算は、左右を逆にすると結果が変わる点にも注意してください。</p>
+      <h3>生成処理の実装を読む</h3>
+      <p>完成した実装は <a href="labs/ch05/compiler.c">compiler.c</a> です。前章の字句解析・構文解析を残し、木の表示関数の代わりに次の関数を用意しています。<code>node-&gt;op</code> が <code>'\0'</code> なら数、それ以外なら演算ノードでした。</p>
+      <pre><code>static void generate(const Node *node) {
+    if (node-&gt;op == '\0') {
+        printf("    mov rax, %d\n", node-&gt;value);
+        return;
+    }
+    generate(node-&gt;left);
+    printf("    push rax\n");
+    generate(node-&gt;right);
+    printf("    mov rdi, rax\n");
+    printf("    pop rax\n");
+    switch (node-&gt;op) {
+        case '+': printf("    add rax, rdi\n"); break;
+        case '-': printf("    sub rax, rdi\n"); break;
+        case '*': printf("    imul rax, rdi\n"); break;
+        case '/':
+            printf("    cqo\n");
+            printf("    idiv rdi\n");
+            break;
+    }
+}</code></pre>
+      <p><code>generate(node-&gt;left)</code> は、左の子に対応する命令をすべて出力してから戻ります。右の子も同様です。ここで再帰的に呼ばれているのは、<strong>コンパイラ内のＣの関数</strong>です。生成されるプログラムには、この再帰呼び出しに対応する <code>call</code> はなく、計算命令が順に並びます。</p>
+      <p>構文解析に成功したら、<code>main:</code> などの見出しを出力し、<code>generate(root)</code> で式全体の命令を出し、最後に <code>ret</code> を出します。根の処理も「結果は rax」という約束を守るので、その値を返せます。優先順位を生成側で判定し直す必要はありません。括弧や優先順位は、すでに木の親子関係になっています。</p>
+      <figure class="concept-figure"><figcaption><strong>図３　2+3*4 の実行を追う</strong><span>保存欄は式のために積んだ値だけを示し、右端が最後に保存した値です。戻りアドレスは省略しています。「―」の値はまだ使いません。</span></figcaption>
+        <div class="table-scroll"><table><thead><tr><th>実行した命令</th><th>rax</th><th>rdi</th><th>保存中の値</th></tr></thead><tbody>
+          <tr><td><code>mov rax, 2</code></td><td>2</td><td>―</td><td>なし</td></tr>
+          <tr><td><code>push rax</code></td><td>2</td><td>―</td><td>2</td></tr>
+          <tr><td><code>mov rax, 3</code> → <code>push rax</code></td><td>3</td><td>―</td><td>2, 3</td></tr>
+          <tr><td><code>mov rax, 4</code> → <code>mov rdi, rax</code></td><td>4</td><td>4</td><td>2, 3</td></tr>
+          <tr><td><code>pop rax</code></td><td>3</td><td>4</td><td>2</td></tr>
+          <tr><td><code>imul rax, rdi</code></td><td>12</td><td>4</td><td>2</td></tr>
+          <tr><td><code>mov rdi, rax</code> → <code>pop rax</code></td><td>2</td><td>12</td><td>なし</td></tr>
+          <tr><td><code>add rax, rdi</code></td><td>14</td><td>12</td><td>なし</td></tr>
+        </tbody></table></div>
+        <p class="figure-takeaway">２を保管したまま３×４を計算し、その１２と２を最後に足します。式のための保存がすべて解消した状態で、次の ret に進みます。</p>
+      </figure>
+      <h3>今回扱う範囲</h3>
+      <p>入力中の数は前章と同じ０〜２５５、入力長は１０２４バイトまでです。＋、－、＊、／と括弧を扱い、単独の負号はまだ扱いません。ただし <code>3-5</code> のように計算結果が負になる式は扱います。計算には６４ビットのレジスタを使いますが、ゼロ除算や、その計算範囲を超える場合の診断は実装していません。</p>
+      <p class="note">生成に成功したことと、生成されたプログラムが安全に実行できることは別です。たとえば <code>3/0</code> は文法に合うので命令を生成しますが、実行するとゼロ除算になります。本章の実験では使いません。また、シェルの終了状態で観察できるのは０〜２５５です。計算結果全体を表示する仕組みではありません。</p>
+    </section>
+    <section id="hands-on" aria-labelledby="hands-on-title">
+      <h2 id="hands-on-title"><span class="number">３</span>ハンズオン</h2>
+      <h3>準備：コンパイラ自身を作る</h3>
+      <p>第１章と同じコンテナ内で実行します。まだ入っていなければ、マック側でリポジトリのフォルダへ移動し、<code>make -f docker.mk shell</code> を実行してください。次の２行はコンテナ内で実行します。</p>
+      <pre><code>cd /workspace/textbook/new/labs/ch05
+gcc -std=c11 -Wall -Wextra -o /tmp/ch05-compiler compiler.c</code></pre>
+      <p><code>cd</code> は実験フォルダへの移動です。<code>gcc</code> はＣで書いたコンパイラを実行ファイルにします。<code>-std=c11</code> はＣの規格、<code>-Wall -Wextra</code> は警告の指定、<code>-o</code> の後は保存先です。エラーが出ずに完了したことを確認します。</p>
+      <p>編集するときは、マック側のエディタで <code>textbook/new/labs/ch05/compiler.c</code> を開けます。コンテナの <code>/workspace</code> は、このリポジトリを共有している場所です。マック側の <code>nvim</code> で編集して保存した内容も、コンテナから読めます。</p>
+      <h3>実験１：木から出た命令と、実行結果をつなぐ</h3>
+      <p><strong>実行前に：</strong><code>2+3*4</code> の根の演算は何でしょうか。最後に出る計算命令と、完成したプログラムの結果を予想してください。</p>
+      <pre><code>/tmp/ch05-compiler '2+3*4' &gt; /tmp/ch05-result.s
+echo $?
+cat /tmp/ch05-result.s</code></pre>
+      <p>１行目は自作コンパイラを動かし、出力をファイルへ保存します。引用符は、＊などをシェルに特別扱いさせず、式を一つの引数として渡すために付けています。２行目の <code>$?</code> は直前のコンパイラの終了状態で、<code>echo</code> がそれを表示します。３行目の <code>cat</code> は保存した文字列を表示します。</p>
+      <p>ここで出る終了状態は０です。まだ１４を計算するプログラムは実行していません。表示された命令を図３と照合し、次へ進みます。</p>
+      <pre><code>gcc -o /tmp/ch05-program /tmp/ch05-result.s
+/tmp/ch05-program
+echo $?</code></pre>
+      <p>１行目は、アセンブリのファイルをアセンブル・リンクして実行ファイルにします。入力が <code>.s</code> なので、Ｃからアセンブリに変換する工程は不要です。ビルド成功後、２行目で生成されたプログラムを起動し、３行目でその終了状態を表示します。</p>
+      <details><summary>実行後に開く：２種類の終了状態</summary><p>コンパイラの終了状態は０、生成されたプログラムの終了状態は１４です。前者は変換処理の成功、後者は今回の式の結果に対応しています。生成されたプログラム自身に表示処理はないため、２行目だけでは１４は画面に出ません。</p></details>
+      <h3>実験２：括弧で、命令の順序はどう変わるか</h3>
+      <p>入力だけを <code>(2+3)*4</code> に変えます。今度はどの計算命令が先に出るか予想してから、生成・表示・ビルド・実行をやり直してください。</p>
+      <pre><code>/tmp/ch05-compiler '(2+3)*4' &gt; /tmp/ch05-result.s
+cat /tmp/ch05-result.s
+gcc -o /tmp/ch05-program /tmp/ch05-result.s
+/tmp/ch05-program
+echo $?</code></pre>
+      <details><summary>実行後に開く：木の形が命令に残る</summary><p><code>add</code> が先、<code>imul</code> が後になり、結果は２０です。前の実験では <code>imul</code> が先でした。生成関数は括弧の文字を見ていません。構文解析が作った木の形に従ったことで、順序が変わります。</p></details>
+      <p>同じ手順で <code>9-3-2</code> と <code>9-(3-2)</code>、さらに <code>8/3</code> も試してください。入力を変えたら、アセンブリの生成と実行ファイルのビルドの両方をやり直します。どちらかを省くと、以前のプログラムを実行することになります。</p>
+      <details><summary>結果を照合する</summary><p>順に４、８、２です。前の二つは木の結合の違い、最後は整数の割り算であることを確認する実験です。</p></details>
+      <h3>実験３：内側の計算が、外側の保存値を守るか</h3>
+      <p><code>(2+3)*(4+5)</code> の命令を生成して表示します。まだ実行せず、各 <code>push</code> で何を保存し、どの <code>pop</code> がそれを取り出すかをメモしてください。図３と同じ形式で、右の足し算を計算している間の保存値を追います。</p>
+      <p>予想ができたら、実験２の手順でビルド・実行します。終了状態は最終結果だけを示すので、途中の保存状態そのものを観測したわけではありません。生成された命令を読んだ予測と、最終結果が整合するかを確かめる実験です。</p>
+      <details><summary>実行後に開く：５を残したまま、４＋５を計算する</summary><p>左の足し算で２を保存し、３を計算した後に２を取り出して５を作ります。その５を掛け算の左の結果として保存します。右の足し算ではさらに４を保存し、右端の５を計算して４を取り出します。右側が９になった時点でも、外側が保存した５は残っています。最後にその５を取り出し、９と掛けて４５になります。</p></details>
+      <h3>実験４：生成規則を一つ変え、影響を確かめる</h3>
+      <p><code>compiler.c</code> の <code>generate</code> 内で、<code>case '-'</code> が出力する <code>sub rax, rdi</code> だけを <code>add rax, rdi</code> に変えます。字句解析や構文解析は変えません。<code>8-3</code> の結果がどうなるか予想してください。</p>
+      <p>準備の <code>gcc</code> でコンパイラ自身を作り直し、次に <code>8-3</code> のアセンブリを生成し、それをビルド・実行します。表示されたアセンブリも確認してください。</p>
+      <details><summary>実行後に開く：構文木は正しくても、生成が違えば結果が変わる</summary><p>引き算の木に対して足し算の命令を出すため、結果は１１になります。入力を正しく構造化する仕事と、その構造に合う命令を選ぶ仕事は別です。コンパイラだけを作り直しても、以前に生成した実行ファイルは変わりません。</p></details>
+      <p><strong>実験後は sub に戻し、コンパイラをビルドし直してください。</strong>戻した状態で <code>bash check.sh</code> を実行すると、用意した複数の式について、生成から実行までをまとめて確認できます。</p>
+    </section>
+    <section id="check" aria-labelledby="check-title">
+      <h2 id="check-title"><span class="number">４</span>理解チェック</h2>
+      <h3>右側の計算が複雑でも、親の演算が組み合わせられるのはなぜか？</h3>
+      <details><summary>解説を読む</summary><p>各部分木が、結果を <code>rax</code> に残し、スタックを開始時の状態に戻す約束を守るからです。親は右側の内部構造を知らなくても、保存した左の値と <code>rax</code> の右の値を使えます。</p></details>
+      <h3>左の値を最初から rdi に置いて、右側を計算してはいけないのか？</h3>
+      <details><summary>解説を読む</summary><p>今回の生成方法では、右側の演算も <code>rdi</code> を使います。右側が数一つなら動く場合がありますが、入れ子の演算では左の値が上書きされます。スタックなら、内側の処理が自分の保存値だけを取り出すことで外側の値を守れます。</p></details>
+      <h3>pop rax の前に mov rdi, rax を出すのはなぜか？</h3>
+      <details><summary>解説を読む</summary><p>その時点の <code>rax</code> には右の結果があります。先に左の値を <code>pop rax</code> すると、右の結果を失います。右を <code>rdi</code> に移してから左を戻すことで、左右の値が同時にそろいます。</p></details>
+      <h3>push の値を一つ残したまま ret へ進むと、何が困るか？</h3>
+      <details><summary>解説を読む</summary><p>スタックの先頭が元の戻りアドレスではなく一時保存値になっています。<code>ret</code> はそれを戻り先として取り出すため、正しい場所へ戻れません。計算値が正しくても、保存と取り出しの対応が崩れていればプログラムは正しく動きません。</p></details>
+      <h3>200+100 の終了状態が４４でも、足し算を間違えたとは限らないのはなぜか？</h3>
+      <details><summary>解説を読む</summary><p>レジスタ上の計算結果は３００ですが、この環境でシェルへ伝わる終了状態は下位８ビットです。３００を２５６で割った余りの４４になります。終了状態だけでは、元の計算結果の全体はわかりません。負の値もそのまま表示されるわけではなく、<code>3-5</code> なら２５４になります。</p></details>
+      <h3>コンパイラの終了状態が０なら、ゼロ除算も検査済みか？</h3>
+      <details><summary>解説を読む</summary><p>いいえ。今回の０は、入力を解析して命令を出力できたことを示します。ゼロ除算を事前に調べる処理はありません。命令生成の成功と、生成されたプログラムの実行時の振る舞いを分けて考えます。</p></details>
+      <div class="sources"><h3>参照先</h3><p><a href="https://www.sigbus.info/compilerbook">原書「低レイヤを知りたい人のためのＣコンパイラ作成入門」</a>の構文木からのコード生成、スタック、乗除算に対応します。本章は、部分木の結果を <code>rax</code> に残し、待機中の左の値だけをスタックへ保存する構成です。</p><p>確認用の <a href="labs/ch05/check.sh">検証スクリプト</a>は、コンテナ内の第５章フォルダで <code>bash check.sh</code> と実行できます。実験４の変更を元に戻してから使ってください。</p></div>
+    </section>
+    <footer><nav class="chapter-navigation" aria-label="前後の章"><a class="chapter-prev" href="parsing.html" rel="prev">第４章　構文解析</a><a class="chapter-next" href="separate-compilation.html" rel="next">第６章　分割コンパイルとリンク</a></nav></footer>
+  </main>
+</body>
+</html>

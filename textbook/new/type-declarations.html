@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Ｃの宣言を型の構造へ読み替え、配列・ポインタ・関数の結び付きを実験する。">
+  <title>第１３章　Ｃの型の構文｜実験で理解するコンパイラ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">本文へ移動</a>
+  <details class="sidebar"><summary>目次</summary><aside>
+    <p class="brand">実験で理解する<br>コンパイラ</p><p class="edition">新しい教科書</p>
+    <nav aria-label="本の目次">
+      <a href="contents.html">目次　全体の章立て</a><a href="index.html">序章　本の構成</a>
+      <a href="machine-code.html">第１章　機械語とアセンブラ</a><a href="minimal-compiler.html">第２章　最小のコンパイラ</a>
+      <a href="tokenization.html">第３章　字句解析</a><a href="parsing.html">第４章　構文解析</a>
+      <a href="code-generation.html">第５章　式のコード生成</a><a href="separate-compilation.html">第６章　分割コンパイルとリンク</a>
+      <a href="local-variables.html">第７章　ローカル変数とスタック</a><a href="function-calls.html">第８章　関数呼び出し</a>
+      <a href="integer-representation.html">第９章　整数の表現</a><a href="pointers-and-strings.html">第１０章　ポインタと文字列</a>
+      <a href="executable-image.html">第１１章　実行イメージと初期化</a>
+      <a href="linking-libraries.html">第１２章　スタティックリンクとダイナミックリンク</a>
+      <a href="type-declarations.html" aria-current="page">第１３章　Ｃの型の構文</a>
+    </nav>
+    <nav class="contents" aria-label="この章の目次"><a href="#question">１　この章で扱う問い</a><a href="#theory">２　この章の理論</a><a href="#hands-on">３　ハンズオン</a><a href="#check">４　理解チェック</a></nav>
+    <a class="previous" href="../index.html">以前の教科書を読む</a>
+  </aside></details>
+  <main id="main">
+
+<header><p class="eyebrow">第１３章</p><h1>Ｃの型の構文</h1><p class="lead">記号を順に眺めるのではなく、名前にどんな型が組み合わさっているかを読む。</p><p>第１０章ではポインタと配列を使い、第１２章では関数の受け渡しの約束を確認しました。今回は、それらをＣの宣言でどう書き分け、コンパイラがどう構造として扱うかを考えます。</p></header>
+<section id="question"><h2><span class="number">１</span>この章で扱う問い</h2>
+<pre><code>int *a[3];
+int (*p)[3];</code></pre>
+<p><strong>どちらも int と * と [3] を使うのに、なぜ違う型になるのか？</strong>最初は「ポインタを３個並べた配列」、次は「整数３個の配列を指すポインタ」です。括弧によって結び付きが変わります。この違いを、読み方だけでなく、使える式や大きさでも確かめます。</p>
+<p>本章ではＣ１１の宣言のうち、int、ポインタ、固定長配列、関数、const、typedef を扱います。既存のＧＣＣで観察し、自作コンパイラへの実装は行いません。宣言の構文木から型を組み立てる考え方までを示し、構造体や可変長配列などの全構文は扱いません。</p></section>
+<section id="theory"><h2><span class="number">２</span>この章の理論</h2>
+<h3>型の出発点と、名前に付く形を分ける</h3>
+<pre><code>int *p;
+int *p, q;</code></pre>
+<p>１行目の <code>int</code> は型の出発点、<code>*p</code> は名前とポインタの形を指定する<strong>宣言子</strong>です。組み合わせると、p は int を指すポインタになります。２行目では宣言子が <code>*p</code> と <code>q</code> の二つあるため、p だけがポインタで、q は int です。これは独立した例で、同じ場所へ２行とも書く指示ではありません。</p>
+<p>型は単なる「整数かどうか」の印ではありません。ポインタなら何を指すか、配列なら何が何個並ぶか、関数なら引数と戻り値が何か、という内側の型を含みます。コンパイラはこの情報を使い、必要な大きさや、代入・呼び出しが適切かを判断します。</p>
+<h3>名前から、結び付きの強い部分を読む</h3>
+<p>本章の宣言では、名前から出発し、同じ括弧の範囲にある右側の <code>[]</code> や関数の <code>()</code> を、左側の <code>*</code> より先に読みます。グループを作る括弧に囲まれている場合は、その内側の結び付きを先に読み、外へ進みます。最後に int へつなぎます。</p>
+<p><code>int *a[3];</code> なら、a → [3] → * → int。「a は３要素の配列、その要素はポインタ、その指す先は int」です。一方 <code>int (*p)[3];</code> では、p は括弧の内側にあるので p → * → [3] → int。「p はポインタ、その指す先は３要素の配列、その要素は int」です。</p>
+<figure class="concept-figure"><figcaption><strong>図１　同じ記号でも、型を重ねる順序が違う</strong><span>左は宣言、右は名前から見た型の構造です。矢印は読み替えを示します。</span></figcaption><div class="call-return-diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 195" role="img" aria-labelledby="array-types"><title id="array-types">図１　同じ記号でも、型を重ねる順序が違う</title><rect x="10" y="15" width="265" height="64" rx="6" fill="#e9eee5" stroke="#355d4c"/><rect x="330" y="15" width="420" height="64" rx="6" fill="#fffef9" stroke="#355d4c"/><text x="142" y="53" text-anchor="middle" class="diagram-code">int *a[3];</text><text x="302" y="53" text-anchor="middle">→</text><text x="540" y="42" text-anchor="middle">配列３個 → ポインタ → int</text><text x="540" y="66" text-anchor="middle" class="diagram-small">a 自体は配列。各要素がアドレスを持つ</text><rect x="10" y="105" width="265" height="64" rx="6" fill="#e9eee5" stroke="#355d4c"/><rect x="330" y="105" width="420" height="64" rx="6" fill="#fffef9" stroke="#355d4c"/><text x="142" y="143" text-anchor="middle" class="diagram-code">int (*p)[3];</text><text x="302" y="143" text-anchor="middle">→</text><text x="540" y="132" text-anchor="middle">ポインタ → 配列３個 → int</text><text x="540" y="156" text-anchor="middle" class="diagram-small">p 自体はポインタ。指す先が配列</text></svg></div></figure>
+<p>これは宣言を読む順序です。実行時に配列やポインタが順番に作られる、という意味ではありません。宣言中の * は型を指定する記号、式の中の * はポインタが指すものを取り出す演算子で、役割を区別します。</p>
+<h3>型が違うと、使う式も違う</h3>
+<pre><code>int values[3] = {10, 20, 30};
+int *a[3] = {&amp;values[0], &amp;values[1], &amp;values[2]};
+int (*p)[3] = &amp;values;</code></pre>
+<p><code>a[1]</code> はポインタなので、<code>*a[1]</code> で２０を読みます。<code>p</code> は配列へのポインタなので、まず <code>*p</code> で配列を取り出し、<code>(*p)[1]</code> で２０を読みます。宣言の括弧は、必要な操作の組み合わせにも現れます。</p>
+<p><code>sizeof a</code> はポインタ３個分、<code>sizeof p</code> はポインタ１個分、<code>sizeof *p</code> は int ３個分です。教材のリナックス x86-64 環境では順に２４、８、１２バイトになります。この数値はＣのあらゆる環境で共通ではありません。</p>
+<p>配列 values は多くの式で先頭要素へのポインタへ変換されますが、<code>&amp;values</code> は配列全体へのポインタです。アドレスの出発点が重なっていても型は異なり、int へのポインタの +1 は int １個分、配列へのポインタの +1 は配列１個分進みます。１個先の終端を指すことと、そこを読み書きしてよいことは別です。</p>
+<h3>関数そのものか、関数を指す変数か</h3>
+<pre><code>int *f(int x);
+int (*fp)(int);</code></pre>
+<p>最初は f → (int x) → * → int。f は int を１個受け取り、int へのポインタを返す関数です。関数本体をまだ書いていない宣言です。次は fp → * → (int) → int。fp は int を１個受け取って int を返す関数へのポインタ変数です。引数の名前はこの宣言では省略しています。</p>
+<figure class="concept-figure"><figcaption><strong>図２　括弧で変わる、関数とポインタの関係</strong><span>左は宣言、右は名前から見た型の構造です。矢印は読み替えを示します。</span></figcaption><div class="call-return-diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 195" role="img" aria-labelledby="function-types"><title id="function-types">図２　括弧で変わる、関数とポインタの関係</title><rect x="10" y="15" width="265" height="64" rx="6" fill="#e9eee5" stroke="#355d4c"/><rect x="330" y="15" width="420" height="64" rx="6" fill="#fffef9" stroke="#355d4c"/><text x="142" y="53" text-anchor="middle" class="diagram-code">int *f(int x);</text><text x="302" y="53" text-anchor="middle">→</text><text x="540" y="42" text-anchor="middle">関数（引数 int）→ ポインタ → int</text><text x="540" y="66" text-anchor="middle" class="diagram-small">関数がポインタを返す</text><rect x="10" y="105" width="265" height="64" rx="6" fill="#e9eee5" stroke="#355d4c"/><rect x="330" y="105" width="420" height="64" rx="6" fill="#fffef9" stroke="#355d4c"/><text x="142" y="143" text-anchor="middle" class="diagram-code">int (*fp)(int);</text><text x="302" y="143" text-anchor="middle">→</text><text x="540" y="132" text-anchor="middle">ポインタ → 関数（引数 int）→ int</text><text x="540" y="156" text-anchor="middle" class="diagram-small">変数が関数を指す</text></svg></div></figure>
+<p>たとえば <code>int twice(int x) { return x * 2; }</code> があれば、<code>int (*fp)(int) = twice;</code> と置けます。関数名が関数へのポインタとして使われ、<code>fp(7)</code> でその関数を呼び出せます。これも呼び出しなので、引数と戻り値の型が一致している必要があります。</p>
+<p class="note">Ｃ１１で引数なしを明示するなら <code>int f(void);</code> と書きます。宣言の <code>int f();</code> は引数の型や個数の情報を指定していない形で、同じ意味ではありません。本章では (void) を使います。</p>
+<h3>const は、どの部分を変更できなくするのか</h3>
+<pre><code>const int *p;
+int *const q = &amp;value;</code></pre>
+<p>この２行は型の説明用で、２行目は int 型の value がすでにあるものとします。p は「const int へのポインタ」です。p 自体は別の場所へ向けられますが、<code>*p = 9;</code> のように p を通じて値を書き換えることはできません。指す元の変数が必ず読み取り専用という意味ではなく、この型を通じた書き込みを制限します。</p>
+<p>q は「int への const ポインタ」です。q が保持するアドレスを後から変える代入はできませんが、指す先が変更可能な int なら <code>*q = 9;</code> は可能です。const が int に付くか、ポインタに付くかを見分けます。</p>
+<h3>typedef は、読めた型に名前を付ける</h3>
+<pre><code>typedef int (*Operation)(int);
+Operation op = twice;</code></pre>
+<p>最初の宣言を Operation → * → (int) → int と読んだ型に、Operation という別名を付けます。関数ポインタ型の別名なので、２行目の op は関数ではなくポインタ変数です。別名を付けても、受け渡しの規則が別の型へ変わるわけではありません。</p>
+<h3>コンパイラでは、文字列ではなく型の構造にする</h3>
+<p>第４章で式を構文木へ変換したように、宣言にも入れ子の構造が必要です。次は本章の説明用に絞った文法です。識別子は変数や関数の名前、宣言指定部はここでは int などの型の出発点を意味します。</p>
+<pre><code>宣言     = 宣言指定部 宣言子 ";"
+宣言子   = "*"* 直接宣言子
+直接宣言子 = (識別子 | "(" 宣言子 ")") 接尾部*
+接尾部   = "[" 整数 "]" | "(" 引数型の並び ")"</code></pre>
+<p>この文法表の引用符は実際の記号を表し、引用符の外の * は「０回以上の繰り返し」、縦棒は「どちらか」を表します。初期値、複数の宣言子、const などは省いた簡略形です。引数型の並びには void による引数なしの指定も含めて考えます。</p>
+<p>処理では、名前から外へ読んだ順序を残します。a の例は「配列３個、ポインタ」、p の例は「ポインタ、配列３個」です。次に int から始め、そのリストを<strong>逆順に</strong>適用して包みます。単に左から見つけた記号順に型を足すと、括弧の意味を失います。</p>
+<figure class="concept-figure"><figcaption><strong>図３　int から型を包み、名前に割り当てる</strong><span>左は宣言、右は名前から見た型の構造です。矢印は読み替えを示します。</span></figcaption><div class="call-return-diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 195" role="img" aria-labelledby="construct-types"><title id="construct-types">図３　int から型を包み、名前に割り当てる</title><rect x="10" y="15" width="265" height="64" rx="6" fill="#e9eee5" stroke="#355d4c"/><rect x="330" y="15" width="420" height="64" rx="6" fill="#fffef9" stroke="#355d4c"/><text x="142" y="53" text-anchor="middle" class="diagram-code">a：配列３個、ポインタ</text><text x="302" y="53" text-anchor="middle">→</text><text x="540" y="42" text-anchor="middle">int → ポインタ型 → 配列型</text><text x="540" y="66" text-anchor="middle" class="diagram-small">最終形：配列３個（ポインタ（int））</text><rect x="10" y="105" width="265" height="64" rx="6" fill="#e9eee5" stroke="#355d4c"/><rect x="330" y="105" width="420" height="64" rx="6" fill="#fffef9" stroke="#355d4c"/><text x="142" y="143" text-anchor="middle" class="diagram-code">p：ポインタ、配列３個</text><text x="302" y="143" text-anchor="middle">→</text><text x="540" y="132" text-anchor="middle">int → 配列型 → ポインタ型</text><text x="540" y="156" text-anchor="middle" class="diagram-small">最終形：ポインタ（配列３個（int））</text></svg></div></figure>
+<p>実装上は、ポインタ型には指す先の型、配列型には要素の型と個数、関数型には戻り値と引数の型の一覧を持たせます。構文解析後にも検査が必要です。Ｃでは「関数の配列」や「配列そのものを返す関数」は許されません。「関数へのポインタの配列」や「配列へのポインタを返す関数」なら表現できます。</p>
+<h3>関数の引数にある配列宣言は、特別な調整を受ける</h3>
+<pre><code>void change(int a[3]);</code></pre>
+<p>この引数 a の型は、関数の型を決める段階で <code>int *</code> に調整されます。配列３個分が値として丸ごと渡されるのではありません。また、この [3] だけで実行時の長さ検査が入るわけでもありません。</p>
+<p>呼び出し側で <code>change(values)</code> と書くと、配列式 values が先頭要素へのポインタに変換されます。「宣言で引数の型を調整すること」と「呼び出しで配列式を変換すること」は別の規則ですが、この例では組み合わさって働きます。配列全体へのポインタを渡したいなら <code>int (*p)[3]</code> と宣言し、<code>&amp;values</code> を渡します。</p>
+</section>
+<section id="hands-on"><h2><span class="number">３</span>ハンズオン</h2>
+<h3>準備：リナックスコンテナのシェルへ入る</h3>
+<p>第１章の実行環境を使います。下の cd は教材のソースがある場所へ移動し、mktemp は実行ファイル用の一時ディレクトリを作ります。同じシェルで順に進めます。</p>
+<pre><code>cd /workspace/textbook/new/labs/ch13
+work=$(mktemp -d /tmp/compilerbook-ch13.XXXXXX)</code></pre>
+<h3>実験１：型から、大きさと操作を予想する</h3>
+<p><a href="labs/ch13/types.c">types.c</a> の a、p、fp、op、result の宣言を読み、それぞれ配列・ポインタ・関数のどれかをメモします。特に sizeof a、sizeof p、sizeof *p の違いを予想してから実行します。</p>
+<pre><code>gcc -std=c11 -Wall -Wextra -Werror -pedantic types.c -o "$work/types"
+"$work/types"
+echo $?</code></pre>
+<p>ＧＣＣでＣソースから実行ファイルを作り、次の行で動かしています。-std=c11 は規格、-Wall -Wextra は警告、-pedantic は規格に沿った診断を求め、-Werror は警告をエラーとして扱う指定です。-o は出力先です。</p>
+<details><summary>実行後に開く：型と結果の対応</summary><p>最初は２０と２０、大きさは２４・８・１２、最後は１４・１４・２０です。fp と op は同じ twice を呼びます。result は identity が受け取ったポインタを返したものなので、values[1] を指しています。表示した数値と終了状態は別で、main は０を返します。</p></details>
+<h3>実験２：括弧を変えると、どこで意味が変わるか</h3>
+<p>元ファイルを残すため作業コピーを作ります。コピー内の <code>int (*p)[3] = &amp;values;</code> だけを <code>int *p[3] = &amp;values;</code> に変えてください。どの型へ変わり、なぜ同じ初期値を使えなくなるかを先に説明します。</p>
+<pre><code>cp types.c "$work/changed.c"
+gcc -std=c11 -Wall -Wextra -Werror -pedantic -fsyntax-only "$work/changed.c"</code></pre>
+<p>cp の後、２行目を実行する前に編集します。コンテナにエディタがなければ <code>cp types.c changed.c</code> として教材ディレクトリ内にコピーを作り、マック側のエディタで編集して、検査対象を changed.c に変えられます。-fsyntax-only は実行ファイルを作らず、構文や型などを検査する指定です。</p>
+<details><summary>確認後に開く：想定する失敗</summary><p>p はポインタ３個の配列になり、配列全体へのポインタである &amp;values をそのまま初期値にはできません。診断文はＧＣＣの版で変わります。コンパイル失敗を確認する実験なので、古い実行ファイルを動かして変更後の結果と思わないようにします。</p></details>
+<h3>実験３：引数の配列が、コピーではないことを確かめる</h3>
+<p><a href="labs/ch13/parameters.c">parameters.c</a> では change が２番目の要素を９９へ、row が３番目を７７へ変更します。呼び出し後に元の配列がどうなるか予想します。</p>
+<pre><code>gcc -std=c11 -Wall -Wextra -Werror -pedantic parameters.c -o "$work/parameters"
+"$work/parameters"</code></pre>
+<details><summary>実行後に開く：二つの受け取り方</summary><p>呼び出し元の配列は１２バイト、表示した int * の大きさは８バイトです。変更後は１０・９９・７７です。change の引数は int * に調整され、row の引数は配列へのポインタです。どちらも元の配列に関係するアドレスを受け取るので、元の要素が変わります。</p></details>
+<p>さらに change の引数表記だけを <code>int *a</code> に変えて再ビルドし、結果が変わらないことを確認してください。これは引数の宣言に限る調整であり、関数の外にある配列変数の宣言もポインタに変わる、という意味ではありません。</p>
+<h3>実験４：読める構文でも、許されない型がある</h3>
+<p><a href="labs/ch13/rejected.c">rejected.c</a> には条件別の不正な宣言があります。-D は検査対象を選ぶ印を定義し、#if によって該当する箇所だけをＧＣＣへ渡します。どれも実行せず、診断を観察します。</p>
+<pre><code>gcc -std=c11 -Wall -Wextra -Werror -pedantic -fsyntax-only -DARRAY_OF_FUNCTIONS rejected.c
+gcc -std=c11 -Wall -Wextra -Werror -pedantic -fsyntax-only -DRETURN_ARRAY rejected.c
+gcc -std=c11 -Wall -Wextra -Werror -pedantic -fsyntax-only -DPOINTER_TYPE rejected.c</code></pre>
+<p>順に <code>int f[3](void);</code>、<code>int f(void)[3];</code>、<code>int **p = &amp;a;</code> を検査します。最後の a は int の３要素配列です。診断を読む前に、各宣言を日本語の型へ読み替えます。</p>
+<details><summary>確認後に開く：拒否の理由</summary><p>最初は関数の配列、次は配列を返す関数で、どちらもＣでは許されません。最後は int ** と int (*)[3] の不一致です。配列へのポインタは、ポインタ変数を指すポインタとは違います。キャストで診断を消すのではなく、意図した構造に宣言を合わせます。</p></details>
+<h3>実験５：const の位置を確かめる</h3>
+<pre><code>gcc -std=c11 -Wall -Wextra -Werror -pedantic -fsyntax-only -DCONST_VALUE rejected.c
+gcc -std=c11 -Wall -Wextra -Werror -pedantic -fsyntax-only -DCONST_POINTER rejected.c</code></pre>
+<p>最初は const int * を通した値の書き込み、次は int *const 自体への代入です。どの部分が変更禁止なのかを、実際の診断箇所と対応付けます。対話シェルで１行ずつ実行し、エラーを観察してください。</p>
+<p>すべての正常例と、５種類の拒否例をまとめて検証するには <code>bash check.sh</code> を実行します。型の大きさの検証は教材のリナックス x86-64 環境を前提としています。</p>
+</section>
+<section id="check"><h2><span class="number">４</span>理解チェック</h2>
+<h3>int *a[3] と int (*a)[3] は、何が３個なのか？</h3>
+<details><summary>解説を読む</summary><p>前者は a 自身がポインタ３個の配列です。後者は a が指す先に int ３個の配列があります。a 自身はポインタ１個です。</p></details>
+<h3>int (*handlers[2])(int) は何か？</h3>
+<details><summary>解説を読む</summary><p>handlers → [2] → * → (int) → int と読みます。int を受け取り int を返す関数へのポインタが、２個並んだ配列です。関数そのものの配列ではありません。</p></details>
+<h3>宣言の文字列をそのまま保存するだけで、p+1 を生成できるか？</h3>
+<details><summary>解説を読む</summary><p>少なくとも指す先の型と大きさを判断する必要があります。型の構造を持たせれば、ポインタ型から参照先へたどり、１要素分の移動量を計算できます。配列へのポインタなら配列全体の大きさです。</p></details>
+<h3>引数 int a[3] は、要素が３個あることを実行時に確認するか？</h3>
+<details><summary>解説を読む</summary><p>この表記だけでは確認しません。引数はポインタ型へ調整されます。要素へアクセスする側は、有効な範囲を別途守る必要があります。</p></details>
+<h3>const int *p の p を別のアドレスへ変えてもよいか？</h3>
+<details><summary>解説を読む</summary><p>はい。const が付くのは指す先の int です。p 自体を固定するなら int *const p の形になります。</p></details>
+<div class="sources"><h3>参照先</h3><p><a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf">Ｃ１１委員会草案 N1570</a>の 6.7.6（宣言子）、6.7.3（型修飾子）、6.7.8（型の別名）、6.3.2.1（配列や関数の変換）。本章はその一部を実験用に整理したもので、Ｃの全宣言文法を実装するものではありません。</p></div>
+</section>
+<footer><nav class="chapter-navigation" aria-label="前後の章"><a class="chapter-prev" href="linking-libraries.html" rel="prev">第１２章　スタティックリンクとダイナミックリンク</a><a class="chapter-next" href="contents.html">目次　全体の章立て</a></nav></footer>
+</main></body></html>
+

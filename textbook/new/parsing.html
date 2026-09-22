@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="トークン列から構文木を作り、優先順位・括弧・結合の方向を再帰下降構文解析で確かめる。">
+  <title>第４章　構文解析｜実験で理解するコンパイラ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">本文へ移動</a>
+  <details class="sidebar"><summary>目次</summary><aside>
+    <p class="brand">実験で理解する<br>コンパイラ</p><p class="edition">新しい教科書</p>
+    <nav aria-label="本の目次">
+      <a href="contents.html">目次　全体の章立て</a><a href="index.html">序章　本の構成</a>
+      <a href="machine-code.html">第１章　機械語とアセンブラ</a><a href="minimal-compiler.html">第２章　最小のコンパイラ</a>
+      <a href="tokenization.html">第３章　字句解析</a><a href="parsing.html" aria-current="page">第４章　構文解析</a>
+      <a href="code-generation.html">第５章　式のコード生成</a>
+      <a href="separate-compilation.html">第６章　分割コンパイルとリンク</a>
+      <a href="local-variables.html">第７章　ローカル変数とスタック</a>
+      <a href="function-calls.html">第８章　関数呼び出し</a>
+      <a href="integer-representation.html">第９章　整数の表現</a>
+      <a href="pointers-and-strings.html">第１０章　ポインタと文字列</a>
+      <a href="executable-image.html">第１１章　実行イメージと初期化</a>
+      <a href="linking-libraries.html">第１２章　スタティックリンクとダイナミックリンク</a>
+      <a href="type-declarations.html">第１３章　Ｃの型の構文</a>
+    </nav>
+    <nav class="contents" aria-label="この章の目次"><a href="#question">１　この章で扱う問い</a><a href="#theory">２　この章の理論</a><a href="#hands-on">３　ハンズオン</a><a href="#check">４　理解チェック</a></nav>
+    <a class="previous" href="../index.html">以前の教科書を読む</a>
+  </aside></details>
+  <main id="main">
+    <header><p class="eyebrow">第４章</p><h1>構文解析</h1><p class="lead">数と記号の並びから、「何と何を、どう組み合わせるか」を取り出す。</p><p>前章では、<code>2+3*4</code> を数２、＋、数３、＊、数４に分けました。今回は、この並びから「３と４を掛け、その結果を２に足す」という構造を作ります。その構造を目で見える形に出力し、括弧を加えるとどこが変わるかを確かめます。</p></header>
+    <section id="question" aria-labelledby="question-title">
+      <h2 id="question-title"><span class="number">１</span>この章で扱う問い</h2>
+      <p><strong>演算子の優先順位や括弧を、どう構造として表すか？</strong></p>
+      <p><code>2+3*4</code> と <code>(2+3)*4</code> は、数も演算子も同じですが、組み合わせ方が違います。また、<code>9-3-2</code> では、左から引くのか、右側を先にまとめるのかでも結果が変わります。こうした違いを、後の処理が迷わず使える構造にします。</p>
+      <p>前提は第３章のトークンと読み取り位置です。今回もＣで実装しますが、関数の役割、渡す情報、返す構造を順に説明します。本章の出力は木構造で、計算結果やアセンブリではありません。木から命令を作る工程は第５章で扱います。</p>
+    </section>
+    <section id="theory" aria-labelledby="theory-title">
+      <h2 id="theory-title"><span class="number">２</span>この章の理論</h2>
+      <h3>トークンの「並び」に、親子関係を与える</h3>
+      <p><strong>構文解析</strong>は、トークンの並びが言語の規則に合うか確かめ、その組み立てを取り出す処理です。今回の出力は<strong>抽象構文木</strong>と呼ぶ木構造で、略して <code>AST</code> とも書きます。</p>
+      <p>木を構成する一つ一つの要素を<strong>ノード</strong>と呼びます。数のノードは値を持ち、演算子のノードは左と右に計算対象のノードを持ちます。その対象がさらに演算なら、そこにも子があるため、式全体を階層として表せます。木の一番上を<strong>根</strong>、子を持たない数のノードを<strong>葉</strong>と呼びます。</p>
+      <figure class="concept-figure"><figcaption><strong>図１　同じ数と演算子でも、木の形が変わる</strong><span>線は親から計算対象へのつながりです。根の演算を求めるには、その下の部分の結果が必要になります。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 315" role="img" aria-labelledby="trees-title trees-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="trees-title">掛け算優先と括弧による構造の違い</title><desc id="trees-desc">左の2+3*4は根が足し算で、左の子は2、右の子は3と4の掛け算。右の(2+3)*4は根が掛け算で、左の子は2と3の足し算、右の子は4。</desc>
+          <text x="180" y="30" text-anchor="middle" class="diagram-code">2 + 3 * 4</text><text x="560" y="30" text-anchor="middle" class="diagram-code">(2 + 3) * 4</text>
+          <g fill="none" stroke="#355d4c" stroke-width="2"><path d="M180 92L100 155M180 92L260 155M260 180L210 245M260 180L310 245M560 92L480 155M560 92L640 155M480 180L430 245M480 180L530 245"/></g>
+          <g fill="#e9eee5" stroke="#355d4c"><circle cx="180" cy="80" r="25"/><circle cx="260" cy="165" r="25"/><circle cx="560" cy="80" r="25"/><circle cx="480" cy="165" r="25"/></g>
+          <g text-anchor="middle" class="diagram-code"><text x="180" y="87">+</text><text x="100" y="174">2</text><text x="260" y="172">*</text><text x="210" y="265">3</text><text x="310" y="265">4</text><text x="560" y="87">*</text><text x="480" y="172">+</text><text x="640" y="174">4</text><text x="430" y="265">2</text><text x="530" y="265">3</text></g>
+          <text x="180" y="306" text-anchor="middle" class="diagram-small">掛け算の結果を、足し算が使う</text><text x="560" y="306" text-anchor="middle" class="diagram-small">足し算の結果を、掛け算が使う</text>
+        </svg></div>
+        <p class="figure-takeaway">括弧は組み立て方の指定です。その効果が木の形に残るので、今回の木には括弧そのもののノードを作りません。空白など、計算の構造に不要な表記も残さないため「抽象」構文木と呼びます。</p>
+      </figure>
+      <h3>優先順位を、読む範囲の違いで表す</h3>
+      <p>文字列を見てから思いつきで順序を選ぶのではなく、受け付ける並びを<strong>文法</strong>として先に決めます。今回の文法は次の３段階です。</p>
+      <pre><code>expr    = mul (('+' | '-') mul)*
+mul     = primary (('*' | '/') primary)*
+primary = 数 | '(' expr ')'</code></pre>
+      <p><code>=</code> は左のものの組み立て方、<code>|</code> は「どちらか」、末尾の <code>*</code> は「直前のまとまりを０回以上繰り返す」を意味します。引用符内の <code>'*'</code> は入力中の掛け算記号で、繰り返しを表す末尾の <code>*</code> とは役割が違います。引用符は記号を示すための表記で、入力に書く必要はありません。</p>
+      <ul>
+        <li><code>primary</code> は、数一つ、または括弧で囲まれた式一つを読む。</li>
+        <li><code>mul</code> は、まず一つの <code>primary</code> を読み、＊や／が続けば次の <code>primary</code> とまとめる。</li>
+        <li><code>expr</code> は、まず一つの <code>mul</code> を読み、＋や－が続けば次の <code>mul</code> とまとめる。</li>
+      </ul>
+      <p>名前は、<code>expr</code> が式全体、<code>mul</code> が乗除算のまとまり、<code>primary</code> が基本のまとまり、という役割を表します。数一つだけでも、繰り返しを０回にできるので <code>mul</code> や <code>expr</code> として読めます。</p>
+      <p>この段階分けにすると、足し算の右側を作るとき、<code>mul</code> が <code>3*4</code> を先に一つの木にまとめて返します。<strong>掛け算を優先する規則は、足し算が乗除算のまとまりを受け取る構造に埋め込まれています。</strong></p>
+      <h3>文法の各段階を、関数にする</h3>
+      <p>この文法に対応して、<code>expr</code>、<code>mul</code>、<code>primary</code> というＣの関数を作ります。それぞれ必要なトークンを読み、その範囲に対応する木の根を返します。規則に沿って関数を呼び下りるため、この方法を<strong>再帰下降構文解析</strong>と呼びます。</p>
+      <p>ここでの読み取り位置 <code>cursor</code> は、文字の位置ではなく<strong>トークン配列の添字</strong>です。第３章の <code>pos</code> と区別します。関数から戻ったときには、読んだ範囲の次のトークンを指しています。</p>
+      <figure class="concept-figure"><figcaption><strong>図２　2+3*4 を読むときの受け渡し</strong><span>「読む」は、トークンを使って木を作り、読み取り位置を先へ進めることです。</span></figcaption>
+        <div class="table-scroll"><table><thead><tr><th>段階</th><th>読み取り位置</th><th>作った木・受け渡すもの</th></tr></thead><tbody>
+          <tr><td>① <code>expr</code> が左側の <code>mul</code> を呼ぶ</td><td>数２ → ＋</td><td><code>primary</code> が数２の葉を作る。<code>mul</code> は＋を読まずに、その葉を返す。</td></tr>
+          <tr><td>② <code>expr</code> が＋を読む</td><td>＋ → 数３</td><td>左側の木「２」を保持し、右側の <code>mul</code> を呼ぶ。</td></tr>
+          <tr><td>③ 右側の <code>mul</code> が３、＊、４を読む</td><td>数３ → 終了</td><td>根が＊、子が３と４の木を返す。</td></tr>
+          <tr><td>④ <code>expr</code> が左右をまとめる</td><td>終了のまま</td><td>根が＋、左が２、右が③の木になる。</td></tr>
+        </tbody></table></div>
+        <p class="figure-takeaway">先に掛け算を「計算」しているのではありません。掛け算のまとまりを先に「木として組み立て」、足し算の子にしています。</p>
+      </figure>
+      <h3>同じ優先順位なら、左側を積み重ねる</h3>
+      <p><code>9-3-2</code> は <code>(9-3)-2</code> と解釈します。このように同じ優先順位の演算が左からまとまる性質を<strong>左結合</strong>と呼びます。＋と－、＊と／を、それぞれ同じ優先順位で左結合にします。</p>
+      <figure class="concept-figure"><figcaption><strong>図３　これまでの木を、次の演算の左の子にする</strong><span>２番目の－を読むときには、「９－３」がすでに一つの木になっています。</span></figcaption>
+        <pre><code>数９を読む       ９－３まで読む       ９－３－２まで読む
+
+    9                  −                    −
+                      / \                  / \
+                     9   3                −   2
+                                         / \
+                                        9   3</code></pre>
+        <p class="figure-takeaway">根は後から読んだ－です。左の子に「それまでの木」を置くことで、左からまとまる形になります。<code>9-(3-2)</code> の木とは異なります。</p>
+      </figure>
+      <h3>括弧の中では、式全体をもう一度読む</h3>
+      <p><code>primary</code> が開き括弧を見つけたら、内側を読むために <code>expr</code> を呼びます。<code>expr</code> は乗除算や加減算をまとめ、閉じ括弧の手前で返ります。呼んだ側の <code>primary</code> が閉じ括弧を確認して消費し、中で作った木を返します。</p>
+      <p><code>(2+3)*4</code> なら、内側の <code>expr</code> が「２＋３」の木を返し、外側の <code>mul</code> はそれを一つの左側として扱います。そのため、外側の＊は「２＋３」の木と４を子に持ちます。</p>
+      <p>括弧が入れ子なら、同じ仕組みでもう一度 <code>expr</code> を呼びます。<code>expr → mul → primary → expr</code> と関数の呼び出しが循環するのが、ここでの再帰です。再び呼ぶ前には開き括弧を消費するので、同じ場所で際限なく呼び続ける構造ではありません。</p>
+      <h3>実装の状態と、木を表すデータ</h3>
+      <p>完成した実装は <a href="labs/ch04/parse.c">parse.c</a> に用意しました。前章のファイルを変更せず、同じ字句解析規則をこのファイルにも入れています。トークンの長さは今回使わないため省略し、種類・開始位置・数値を保持します。</p>
+      <pre><code>typedef struct Node Node;
+struct Node {
+    char op;
+    int value;
+    Node *left;
+    Node *right;
+};</code></pre>
+      <p><code>Node</code> は木の一要素です。<code>op</code> が <code>'\0'</code> なら数の葉で、<code>value</code> を使います。<code>op</code> が <code>'+'</code> などなら演算ノードで、<code>left</code> と <code>right</code> を使います。<code>Node *</code> は別のノードの場所を指すポインタです。子のノードそのものを丸ごと複製するのではなく、その場所を覚えてつなぎます。</p>
+      <p><code>Parser</code> 構造体は、入力文字列、トークン配列、現在の <code>cursor</code>、ノードを保存する配列などをまとめたものです。各関数に <code>Parser *p</code> を渡し、同じ読み取り位置と保存領域を共有します。<code>p-&gt;cursor</code> は、<code>p</code> が指す構造体の <code>cursor</code> を使う書き方です。</p>
+      <h3>一致した記号だけを読む consume</h3>
+      <pre><code>static bool consume(Parser *p, char symbol) {
+    Token token = p-&gt;tokens[p-&gt;cursor];
+    if (token.kind != SYMBOL || p-&gt;source[token.start] != symbol) {
+        return false;
+    }
+    p-&gt;cursor++;
+    return true;
+}</code></pre>
+      <p><code>consume(p, '+')</code> は現在のトークンが＋なら一つ進んで <code>true</code>、違えば位置を変えずに <code>false</code> を返します。記号でなければ、<code>||</code> の右側を評価せずに判定が終わります。<code>static</code> は、この関数をこのＣファイル内で使う指定です。</p>
+      <p>一致しないときに進まないことが重要です。<code>mul</code> が＋を見ても、その＋を残して戻れば、呼び出し元の <code>expr</code> が読むことができます。</p>
+      <h3>expr は、乗除算の木を加減算でまとめる</h3>
+      <pre><code>static Node *expr(Parser *p) {
+    Node *node = mul(p);
+    if (node == NULL) return NULL;
+    for (;;) {
+        char op;
+        if (consume(p, '+')) op = '+';
+        else if (consume(p, '-')) op = '-';
+        else return node;
+        Node *right = mul(p);
+        if (right == NULL) return NULL;
+        node = new_node(p, op, 0, node, right);
+    }
+}</code></pre>
+      <p>最初の <code>mul(p)</code> で左側の木を受け取ります。<code>for (;;)</code> は繰り返しで、＋でも－でもなくなったら <code>return node</code> で終わります。演算子を読めたら、右側も <code>mul</code> に作らせます。</p>
+      <p><code>new_node</code> は新しいノードの保存場所を取り、演算子・値・左の子・右の子を設定して、その場所を返す補助関数です。ここでの０は使わない数値欄です。<code>node = new_node(..., node, right)</code> が、それまでの木を左の子にし、新しい根を <code>node</code> にする操作です。これが図３の左結合を実現します。</p>
+      <p><code>NULL</code> は木を返せないことを表す値として使っています。下の関数が失敗したら、そのまま上へ失敗を返し、不完全な木を完成した出力として表示しません。<code>mul</code> も同じ形で、呼ぶ相手を <code>primary</code>、記号を＊と／に変えています。</p>
+      <h3>primary が数と括弧を受け持つ</h3>
+      <pre><code>static Node *primary(Parser *p) {
+    if (consume(p, '(')) {
+        Node *node = expr(p);
+        if (node == NULL) return NULL;
+        if (!consume(p, ')')) return fail(p, "閉じ括弧が必要です。");
+        return node;
+    }
+    Token token = p-&gt;tokens[p-&gt;cursor];
+    if (token.kind != NUMBER) return fail(p, "数または開き括弧が必要です。");
+    p-&gt;cursor++;
+    return new_node(p, '\0', token.value, NULL, NULL);
+}</code></pre>
+      <p>開き括弧なら内部の式へ、そうでなければ数へ進みます。<code>!</code> は判定の否定なので、閉じ括弧を消費できなければエラーです。<code>fail</code> は現在のトークンの文字位置と理由を標準エラー出力に書き、<code>NULL</code> を返します。数を読む場合は子がないため、左右を <code>NULL</code> にした葉を作ります。</p>
+      <p><code>primary</code> の定義時点で <code>expr</code> を呼べるように、ファイルには先に <code>static Node *expr(Parser *p);</code> という宣言を置いています。宣言は関数の入出力をＣコンパイラに知らせるもので、その場での実行ではありません。</p>
+      <h3>式を作れた後も、入力の最後を確かめる</h3>
+      <p>最上位では、<code>expr</code> が木を返した後、現在のトークンが <code>END</code> か確認します。これがないと、<code>1 2</code> の最初の１だけを正しい式として受け取り、残りを無視してしまいます。括弧内では <code>primary</code> が閉じ括弧を確認し、式全体の外では <code>main</code> が入力の終了を確認する、という分担です。</p>
+      <p class="note">本章の言語は、０〜２５５の数、二項演算の＋・－・＊・／、括弧です。<code>-3</code> のような単項演算はまだ扱いません。安全に小さな実験をするため入力は１０２４バイトまでに制限し、ノードの保存領域はまとめて確保・解放します。除算の実行やゼロ除算の扱いも、この段階では行いません。</p>
+    </section>
+    <section id="hands-on" aria-labelledby="hands-on-title">
+      <h2 id="hands-on-title"><span class="number">３</span>ハンズオン</h2>
+      <h3>準備：木を表示するプログラムを作る</h3>
+      <p>第３章と同じコンテナ内で実行します。入り直す場合は、マック側のリポジトリで <code>make -f docker.mk shell</code> を実行してください。</p>
+      <pre><code>cd /workspace/textbook/new/labs/ch04
+gcc -std=c11 -Wall -Wextra -o /tmp/ch04-parse parse.c</code></pre>
+      <p><code>cd</code> で第４章の実験フォルダへ移動し、<code>gcc</code> で構文解析器自身を実行ファイルにします。ビルドの成功を確認してから次へ進みます。今回の出力は <code>(演算子 左の子 右の子)</code> の表記です。たとえば <code>(+ 2 3)</code> は、根が＋、左右の子が２と３である木を表します。</p>
+      <p>子がさらに木なら、その場所にも括弧付きの表記を入れます。表示の括弧は木の形を明示するために付けるもので、元の入力の括弧をそのまま再表示しているわけではありません。<code>print_tree</code> が左右の子をたどって、この文字列を書き出します。</p>
+      <h3>実験１：優先順位を木で確認する</h3>
+      <p>根になる演算子と、その左右の子を先に予想してください。計算した数値より、木の形に注目します。</p>
+      <pre><code>/tmp/ch04-parse '2+3*4'
+echo $?</code></pre>
+      <p>引用符は入力全体を一つの引数にし、＊をシェルがファイル名として展開するのも防ぎます。<code>echo $?</code> は構文解析器の終了状態を表示します。</p>
+      <details><summary>実行後に開く：どちらが根になるか</summary><pre><code>(+ 2 (* 3 4))</code></pre><p>根は＋、右の子が掛け算の木です。終了状態は０で、構文解析の成功を表します。１４を計算して返しているわけではありません。</p></details>
+      <h3>実験２：括弧で構造を変える</h3>
+      <pre><code>/tmp/ch04-parse '(2+3)*4'
+/tmp/ch04-parse '((2+3))*4'</code></pre>
+      <p>実験１から根と子がどう入れ替わるかを予想します。さらに、括弧を二重にするとノードが増えるか考えてください。</p>
+      <details><summary>比較後に開く</summary><p>どちらも <code>(* (+ 2 3) 4)</code> になります。括弧内の式を <code>primary</code> が一まとまりで返すため、根は＊です。括弧そのもののノードは作らないので、同じまとまりを二重に囲っても木の形は変わりません。</p></details>
+      <h3>実験３：引き算の結び付き方を見る</h3>
+      <pre><code>/tmp/ch04-parse '9-3-2'
+/tmp/ch04-parse '9-(3-2)'</code></pre>
+      <p>紙やメモに２つの木を描いてから実行します。２番目の－が、左の子に入るか、右の子に入るかを確認します。</p>
+      <details><summary>比較後に開く</summary><p>最初は <code>(- (- 9 3) 2)</code>、次は <code>(- 9 (- 3 2))</code> です。最初はループが左側の木を積み重ね、次は括弧内の木が右側として返ります。もし計算するならそれぞれ４と８になりますが、このプログラムは木を表示するところで止まります。</p></details>
+      <h3>実験４：エラーになった位置と理由を追う</h3>
+      <pre><code>/tmp/ch04-parse '9 +'
+echo $?
+/tmp/ch04-parse '(2+3'
+echo $?
+/tmp/ch04-parse '1 2'
+echo $?</code></pre>
+      <p>どれも前章の字句解析には成功する入力です。今度はどこで期待と合わなくなるか、入力の文字位置を０から数えて予想します。</p>
+      <details><summary>実行後に開く</summary><ul><li><code>9 +</code>：位置３で、数または開き括弧が必要。右側を読もうとして終了トークンに出会います。</li><li><code>(2+3</code>：位置４で、閉じ括弧が必要。内側の式を作った後の確認で失敗します。</li><li><code>1 2</code>：位置２で、余分なトークン。最初の式を作った後の終了確認で失敗します。</li></ul><p>それぞれ終了状態は１です。エラー位置はトークンの個数ではなく、トークンが記録している入力内のバイト位置です。</p></details>
+      <h3>実験５：終了確認を外したら何を見落とすか</h3>
+      <p>マック側の別ターミナルでファイルを開きます。</p>
+      <pre><code>nvim /Users/hatasatoki/Develops/compilerbook/textbook/new/labs/ch04/parse.c</code></pre>
+      <p><code>main</code> 内の次の３行を、一時的にコメントにするか外します。元の内容を戻せるようにしておきます。</p>
+      <pre><code>if (root != NULL &amp;&amp; tokens[parser.cursor].kind != END) {
+    root = fail(&amp;parser, "式の後に余分なトークンがあります。");
+}</code></pre>
+      <p>コンテナ側で再ビルドし、同じ入力を試します。</p>
+      <pre><code>gcc -std=c11 -Wall -Wextra -o /tmp/ch04-parse parse.c
+/tmp/ch04-parse '1 2'
+echo $?</code></pre>
+      <details><summary>変更後に開く：部分的な成功に気付く</summary><p>木として１だけが表示され、終了状態が０になります。<code>expr</code> は＋や－でない数２を見て、そこまでの木を返します。入力全体を読み切ったか確かめる役が消えたため、余りが見逃されます。</p></details>
+      <p>確認後は３行を元に戻して再ビルドし、<code>1 2</code> が再び拒否されることを確認します。式を一つ読めることと、入力全体が正しいことの違いを説明できれば、この実験の区切りです。</p>
+    </section>
+    <section id="check" aria-labelledby="check-title">
+      <h2 id="check-title"><span class="number">４</span>理解チェック</h2>
+      <h3><code>8/2/2</code> と <code>8/(2/2)</code> の木は？</h3>
+      <details><summary>解説を読む</summary><p>それぞれ <code>(/ (/ 8 2) 2)</code> と <code>(/ 8 (/ 2 2))</code> です。＊・／も左結合なので、括弧がなければ最初の除算を左の子に積み重ねます。</p></details>
+      <h3><code>2*(3+4)</code> の括弧の中で、＋を読めるのはなぜ？</h3>
+      <details><summary>解説を読む</summary><p><code>primary</code> が開き括弧を読んだ後、内部の <code>expr</code> を呼ぶからです。外側では掛け算を読んでいても、括弧の中では加減算を含む式全体を読めます。閉じ括弧は呼び出し元の <code>primary</code> が確認します。</p></details>
+      <h3><code>mul</code> が＋を見たとき、なぜ位置を進めずに戻る？</h3>
+      <details><summary>解説を読む</summary><p>＋は呼び出し元の <code>expr</code> が読む記号だからです。ここで飛ばすと、次の処理が式のつながりを判断するための情報を失います。</p></details>
+      <h3><code>-3</code> と <code>3/0</code> は、このプログラムで受け付ける？</h3>
+      <details><summary>解説を読む</summary><p><code>-3</code> は字句解析には成功しますが、今回の <code>primary</code> は先頭の－を扱わないため構文エラーです。<code>3/0</code> は <code>(/ 3 0)</code> という木になります。構文として正しいことと、その計算を実行してよいことは別です。このプログラムは割り算を実行しません。</p></details>
+      <h3>構文解析器が０で終了したら、式の値も０？</h3>
+      <details><summary>解説を読む</summary><p>０は構文解析器が入力全体を正しく読めたことを示します。出力は標準出力に表示された木です。木の計算結果を終了状態で返しているわけではありません。</p></details>
+      <div class="sources"><h3>参照先</h3><p><a href="https://www.sigbus.info/compilerbook">原書「低レイヤを知りたい人のためのＣコンパイラ作成入門」</a>の文法、木構造、再帰下降構文解析に対応します。本章の実装は、構文木だけを観察するために単独で動く構成にしています。</p><p>検証状況：教材のリナックス環境でビルドし、本文の構文木、優先順位、左結合、括弧、エラー位置と終了状態を確認しました。確認用の <a href="labs/ch04/check.sh">検証スクリプト</a>は、コンテナ内の第４章フォルダで <code>bash check.sh</code> と実行できます。実験用の変更を元に戻した状態を検証します。</p></div>
+    </section>
+    <footer><nav class="chapter-navigation" aria-label="前後の章"><a class="chapter-prev" href="tokenization.html" rel="prev">第３章　字句解析</a><a class="chapter-next" href="code-generation.html" rel="next">第５章　式のコード生成</a></nav></footer>
+  </main>
+</body>
+</html>

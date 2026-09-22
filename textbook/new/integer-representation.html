@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ビット幅・符号・２の補数・整数の拡張と桁あふれを、機械語とＣの実験で区別して理解する。">
+  <title>第９章　整数の表現｜実験で理解するコンパイラ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">本文へ移動</a>
+  <details class="sidebar"><summary>目次</summary><aside>
+    <p class="brand">実験で理解する<br>コンパイラ</p><p class="edition">新しい教科書</p>
+    <nav aria-label="本の目次">
+      <a href="contents.html">目次　全体の章立て</a><a href="index.html">序章　本の構成</a>
+      <a href="machine-code.html">第１章　機械語とアセンブラ</a><a href="minimal-compiler.html">第２章　最小のコンパイラ</a>
+      <a href="tokenization.html">第３章　字句解析</a><a href="parsing.html">第４章　構文解析</a>
+      <a href="code-generation.html">第５章　式のコード生成</a><a href="separate-compilation.html">第６章　分割コンパイルとリンク</a>
+      <a href="local-variables.html">第７章　ローカル変数とスタック</a><a href="function-calls.html">第８章　関数呼び出し</a>
+      <a href="integer-representation.html" aria-current="page">第９章　整数の表現</a>
+      <a href="pointers-and-strings.html">第１０章　ポインタと文字列</a>
+      <a href="executable-image.html">第１１章　実行イメージと初期化</a>
+      <a href="linking-libraries.html">第１２章　スタティックリンクとダイナミックリンク</a>
+      <a href="type-declarations.html">第１３章　Ｃの型の構文</a>
+    </nav>
+    <nav class="contents" aria-label="この章の目次"><a href="#question">１　この章で扱う問い</a><a href="#theory">２　この章の理論</a><a href="#hands-on">３　ハンズオン</a><a href="#check">４　理解チェック</a></nav>
+    <a class="previous" href="../index.html">以前の教科書を読む</a>
+  </aside></details>
+  <main id="main">
+    <header><p class="eyebrow">第９章</p><h1>整数の表現</h1><p class="lead">ビット列だけでなく、何ビットを、どの規則で読むかを見る。</p><p>これまでの章では、小さな整数を中心に実験してきました。今回は、負の値や幅の違いを正面から扱います。コンパイラの構文を増やすのではなく、その出力した命令が扱う値の意味を確かめる章です。</p></header>
+    <section id="question" aria-labelledby="question-title">
+      <h2 id="question-title"><span class="number">１</span>この章で扱う問い</h2>
+      <p><strong>同じビット列なのに、２５５にも－１にも見えるのはなぜか？</strong></p>
+      <p>第５章では、<code>3-5</code> の結果を終了状態で見ると２５４になりました。計算を間違えたのでしょうか。それとも、値を見る途中で幅や解釈が変わったのでしょうか。数がレジスタに入り、幅を変え、最後に観測されるまでを分けて考えます。</p>
+      <p>前提はレジスタとメモリ、第８章の整数の引数・戻り値です。図では８ビットに縮めて説明しますが、対象のＣＰＵはこれまでと同じ x86-64 です。ビットの並びは左を上位、右を下位として描きます。メモリ上のバイトの並び順を表す図ではありません。</p>
+    </section>
+    <section id="theory" aria-labelledby="theory-title">
+      <h2 id="theory-title"><span class="number">２</span>この章の理論</h2>
+      <h3>まず、ビットの位置に重みを付ける</h3>
+      <p>１ビットは０か１です。２ビットなら４通り、８ビットなら２の８乗で２５６通りの並びがあります。８ビットを<strong>符号なし整数</strong>として読むと、０〜２５５を表せます。右端から１、２、４、８、１６、３２、６４、１２８という重みを付け、１の位置の重みを足します。</p>
+      <figure class="concept-figure"><figcaption><strong>図１　11111111 を二つの規則で読む</strong><span>ビット列を変えず、最上位ビットの重みだけを変えます。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 260" role="img" aria-labelledby="bits-title bits-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="bits-title">符号なしと２の補数では最上位ビットの重みが異なる</title><desc id="bits-desc">8個の1の重みは、符号なしなら128、64、32、16、8、4、2、1で合計255。２の補数なら最上位だけマイナス128で合計マイナス1。</desc>
+          <g fill="#e9eee5" stroke="#355d4c"><rect x="185" y="38" width="64" height="50"/><rect x="249" y="38" width="64" height="50"/><rect x="313" y="38" width="64" height="50"/><rect x="377" y="38" width="64" height="50"/><rect x="441" y="38" width="64" height="50"/><rect x="505" y="38" width="64" height="50"/><rect x="569" y="38" width="64" height="50"/><rect x="633" y="38" width="64" height="50"/></g>
+          <g text-anchor="middle" class="diagram-code"><text x="217" y="70">1</text><text x="281" y="70">1</text><text x="345" y="70">1</text><text x="409" y="70">1</text><text x="473" y="70">1</text><text x="537" y="70">1</text><text x="601" y="70">1</text><text x="665" y="70">1</text></g>
+          <text x="20" y="126">符号なしの重み</text><text x="20" y="176">２の補数の重み</text>
+          <g text-anchor="middle"><text x="217" y="126">128</text><text x="281" y="126">64</text><text x="345" y="126">32</text><text x="409" y="126">16</text><text x="473" y="126">8</text><text x="537" y="126">4</text><text x="601" y="126">2</text><text x="665" y="126">1</text><text x="217" y="176" fill="#a3452c">−128</text><text x="281" y="176">64</text><text x="345" y="176">32</text><text x="409" y="176">16</text><text x="473" y="176">8</text><text x="537" y="176">4</text><text x="601" y="176">2</text><text x="665" y="176">1</text><text x="380" y="226">符号なし：２５５　／　２の補数：−１２８＋１２７＝−１</text></g>
+        </svg></div>
+      </figure>
+      <h3>負の整数は、２の補数で表す</h3>
+      <p>今回の機械では、符号付き整数に<strong>２の補数</strong>という表現を使います。８ビットなら、最上位の重みを－１２８とし、残る７ビットは従来どおりの正の重みにします。最上位が０なら０〜１２７、１なら－１２８〜－１です。最上位ビットを単なる「マイナス記号」とし、残りを絶対値として読む方式ではありません。</p>
+      <p>８ビットの並びをいったん符号なしの数 u と読んだ場合、u が１２８未満なら符号付きでも同じ値です。１２８以上なら、u−２５６が符号付きの値になります。<code>11111110</code> は２５４なので、２５４−２５６＝－２です。</p>
+      <p>負数のビット列を作るには、対応する正数のビットを反転して１を足す方法も使えます。２の <code>00000010</code> を反転すると <code>11111101</code>、１を足すと <code>11111110</code> になり、－２を表します。幅を８ビットと決めて操作している点が大切です。</p>
+      <div class="table-scroll"><table><thead><tr><th>ビット幅</th><th>符号なし</th><th>２の補数の符号付き</th></tr></thead><tbody>
+        <tr><td>８</td><td>０〜２５５</td><td>－１２８〜１２７</td></tr>
+        <tr><td>３２</td><td>０〜２の３２乗−１</td><td>－２の３１乗〜２の３１乗−１</td></tr>
+        <tr><td>６４</td><td>０〜２の６４乗−１</td><td>－２の６３乗〜２の６３乗−１</td></tr>
+      </tbody></table></div>
+      <p>符号付きでは負の側が一つ多く、－１２８に対応する正の１２８は８ビットの符号付きには入りません。そのため、最小値の符号を反転する操作も、同じ幅に収まるとは限りません。</p>
+      <h3>幅を広げるとき、上に何を足すか</h3>
+      <p>８ビットの <code>11111111</code> を１６ビットにするとき、上へ０を足すと２５５のままです。これは<strong>ゼロ拡張</strong>です。一方、－１という符号付きの値を保つには、元の最上位ビットと同じ１を上へ足します。これを<strong>符号拡張</strong>と呼びます。</p>
+      <figure class="concept-figure"><figcaption><strong>図２　残すビットは同じでも、足すビットで値が変わる</strong><span>読みやすさのため８→１６ビットで描きます。実験では８→６４ビットへ拡張します。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 255" role="img" aria-labelledby="extend-title extend-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="extend-title">ゼロ拡張と符号拡張の比較</title><desc id="extend-desc">元の11111111を下位に残し、ゼロ拡張では上位に00000000を付け255に、符号拡張では11111111を付けマイナス1にする。</desc>
+          <g fill="#e9eee5" stroke="#355d4c"><rect x="450" y="15" width="230" height="45" rx="4"/><rect x="450" y="100" width="230" height="45"/><rect x="450" y="175" width="230" height="45"/></g>
+          <g fill="#f8f6f0" stroke="#355d4c"><rect x="220" y="100" width="230" height="45"/><rect x="220" y="175" width="230" height="45"/></g>
+          <g text-anchor="middle" class="diagram-code"><text x="565" y="45">11111111</text><text x="335" y="130">00000000</text><text x="565" y="130">11111111</text><text x="335" y="205">11111111</text><text x="565" y="205">11111111</text></g>
+          <text x="30" y="44">元の８ビット</text><text x="30" y="128">ゼロ拡張：２５５</text><text x="30" y="203">符号拡張：－１</text>
+          <g text-anchor="middle" class="diagram-small"><text x="335" y="86">新しく補う上位ビット</text><text x="565" y="86">元のビットを保つ</text></g>
+        </svg></div>
+      </figure>
+      <p>符号拡張では、元の最上位が０なら０、１なら１を補います。負数だけの特別操作ではありません。実験で使う <code>movsx rax, dil</code> は符号拡張、<code>movzx eax, dil</code> はゼロ拡張です。<code>dil</code> は第８章で引数に使った rdi の下位８ビットを指します。</p>
+      <p>ゼロ拡張の行が eax 宛てなのは、x86-64 で eax に書くと、rax の上位３２ビットも０になるからです。dil から eax へのゼロ拡張と合わせて、rax 全体では６４ビットの正の２５５になります。第５章の <code>cqo</code> も、割り算に必要な幅へ値の意味を保って広げる、符号拡張の一種でした。</p>
+      <h3>rax・eax・al は、別々の箱ではない</h3>
+      <p>rax は６４ビット全体、eax はその下位３２ビット、al はさらに下位８ビットの名前です。同じ保存場所の一部分を指します。ただし、「その部分を読む」ことと「そこへ書いたときの効果」は分けて考えます。</p>
+      <figure class="concept-figure"><figcaption><strong>図３　eax への書き込みは、上位３２ビットも０にする</strong><span>１行目で rax 全体を１のビットで埋め、２行目で eax に１を書いた例です。</span></figcaption>
+        <div class="call-return-diagram"><svg viewBox="0 0 760 230" role="img" aria-labelledby="width-title width-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="width-title">mov eax,1の前後で変わるrax全体</title><desc id="width-desc">mov rax,-1の後は上位と下位の両方が16進ffffffff。mov eax,1の後は上位が00000000、下位が00000001で、rax全体の値も1になる。</desc>
+          <g fill="#e9eee5" stroke="#355d4c"><rect x="230" y="50" width="240" height="50"/><rect x="470" y="50" width="240" height="50"/><rect x="230" y="140" width="240" height="50"/><rect x="470" y="140" width="240" height="50"/></g>
+          <g text-anchor="middle"><text x="350" y="30">上位３２ビット</text><text x="590" y="30">下位３２ビット（eax）</text><text x="350" y="82" class="diagram-code">ffffffff</text><text x="590" y="82" class="diagram-code">ffffffff</text><text x="350" y="172" class="diagram-code">00000000</text><text x="590" y="172" class="diagram-code">00000001</text><text x="350" y="217" class="diagram-small">書き込みに伴い０になる</text><text x="590" y="217" class="diagram-small">指定した１が入る</text></g>
+          <text x="20" y="82" class="diagram-code">mov rax, -1</text><text x="20" y="172" class="diagram-code">mov eax, 1</text>
+        </svg></div>
+      </figure>
+      <p>図は１６進数で、１桁が４ビット、f は <code>1111</code> を表します。８桁で３２ビット、１６桁で６４ビットです。eax を読んだだけでは上位ビットは変わりません。また、al や１６ビットの ax への書き込みには、eax のように上位全体を０にする効果はありません。</p>
+      <h3>幅を超えた足し算では、何が残るか</h3>
+      <p>８ビットの機械語の加算で２５５に１を足すと、数学的な結果２５６は９ビット必要です。結果の下位８ビットだけを残すと０になります。同じ命令で１２７に１を足すと、結果のビット列は <code>10000000</code> です。符号なしなら１２８で収まりますが、８ビットの符号付きとして読むと－１２８になり、期待した正の１２８は表せません。</p>
+      <p>ＣＰＵには、こうした計算の状態を記録する<strong>フラグ</strong>があります。今回観察する <code>CF</code> は符号なしの加算で幅の外へ桁が出たか、<code>OF</code> は符号付きの加算として範囲を超えたかを示します。１ならその条件が成立、０なら不成立です。</p>
+      <div class="table-scroll"><table><thead><tr><th>８ビットで行う操作</th><th>結果のビット</th><th>ＣＦ</th><th>ＯＦ</th></tr></thead><tbody>
+        <tr><td>２５５＋１（符号付きでは－１＋１）</td><td>00000000</td><td>１</td><td>０</td></tr>
+        <tr><td>１２７＋１</td><td>10000000</td><td>０</td><td>１</td></tr>
+      </tbody></table></div>
+      <p><code>add</code> に「符号あり」という型情報を渡しているわけではありません。同じビット加算に対して両方のフラグが更新され、後の処理が必要な条件を使います。今回の検証用関数は <code>add al, 1</code> の直後に <code>setc</code> と <code>seto</code> でフラグを０か１の値に取り出します。フラグを変える別の計算を挟む前に記録する必要があります。</p>
+      <h3>機械語の動きと、Ｃの規則を混ぜない</h3>
+      <p>機械語の８ビット加算を見て、Ｃのどんな整数加算も同じように折り返す、と考えてはいけません。Ｃの符号付き整数の加算などで表現範囲を超えると、通常は<strong>未定義動作</strong>です。言語として結果を保証せず、コンパイラはその事態が起きない前提で最適化できます。「負になるはず」も「必ず止まるはず」も保証されません。本章では、その動作に依存するＣの実験はしません。</p>
+      <p>一方、Ｃの符号なしの型への整数変換は、その型の幅に対応した２のべき乗を法とする値になります。８ビットの符号なしへ３００を変換すれば４４です。ただし、８ビットの型で宣言した変数の式が、常に８ビットで計算されるわけでもありません。</p>
+      <pre><code>uint8_t a = 255;
+int sum = a + 1;
+uint8_t narrowed = (uint8_t)sum;</code></pre>
+      <p><code>uint8_t</code> は、この環境で使える８ビットの符号なし整数型です。この例の a は加算時に int へ<strong>整数昇格</strong>するため、<code>a+1</code> は int の２５６として計算されます。３行目の <code>(uint8_t)</code> は型変換の指定で、ここで８ビットへ狭めた結果が０になります。加算で０になったのか、後の変換で０になったのかを分けて読んでください。</p>
+      <h3>計算結果、返り値、終了状態を区別する</h3>
+      <p>これまでの実験は、生成した main の返り値をシェルの <code>$?</code> で観察していました。この経路では、一般に使える計算結果の全体ではなく、終了状態の下位８ビットを見ています。３００なら４４、－２なら２５４です。これは、どんな命令も８ビットで計算していたという意味ではありません。</p>
+      <p>この違いを確かめるため、今回は <code>printf</code> で値そのものも表示します。表示は文字列を画面へ送る処理、<code>return</code> は値を呼び出した側へ返す処理です。画面に３００が出た直後でも、<code>echo $?</code> は４４を表示できます。</p>
+      <p class="note">第７・８章の自作言語に、符号なし型や８ビット型を追加するわけではありません。これまでの値は６４ビットの命令で扱っていました。今後型に応じたコードを作るには、幅・符号・拡張方法・範囲超過の規則を言語として決める必要があります。</p>
+    </section>
+    <section id="hands-on" aria-labelledby="hands-on-title">
+      <h2 id="hands-on-title"><span class="number">３</span>ハンズオン</h2>
+      <h3>準備：観察用プログラムを作る</h3>
+      <p>第１章と同じリナックスのコンテナ内で実行します。まだ入っていなければ、マック側のリポジトリで <code>make -f docker.mk shell</code> を実行してください。</p>
+      <pre><code>cd /workspace/textbook/new/labs/ch09
+gcc -std=c11 -Wall -Wextra -o /tmp/ch09-inspect inspect.c integers.s</code></pre>
+      <p><a href="labs/ch09/inspect.c">inspect.c</a> は数値とビット列を表示するＣのプログラム、<a href="labs/ch09/integers.s">integers.s</a> は観察する機械語の関数です。gcc がそれぞれをコンパイル・アセンブルし、リンクして一つの実行ファイルにします。これは自作コンパイラではなく、整数の振る舞いを調べる道具です。</p>
+      <p>表示コードの <code>PRIu64</code> などは、６４ビット整数を正しい形式で printf に渡すための指定です。今回の中心は、表示の実装を暗記することではなく、何の幅・符号の値を観察しているかを説明できることです。</p>
+      <h3>実験１：同じ並びを二通りに読む</h3>
+      <p><strong>実行前に：</strong><code>01111111</code>、<code>10000000</code>、<code>11111110</code>、<code>11111111</code> を、それぞれ符号なしと２の補数で読んだ値をメモします。</p>
+      <pre><code>/tmp/ch09-inspect bits</code></pre>
+      <p><code>bits</code> は、このプログラムへ渡す実験名です。表示側は、符号付きへの範囲外変換の結果に頼らず、「１２８以上なら２５６を引く」という規則で解釈を計算しています。メモリの型を動的に切り替えているわけではありません。</p>
+      <details><summary>実行後に開く：ビットは同じでも値は違う</summary><p>順に、符号なしでは１２７・１２８・２５４・２５５、符号付きでは１２７・－１２８・－２・－１です。最上位ビットが０の最初の例だけ、両者の値が一致します。</p></details>
+      <h3>実験２：ゼロ拡張と符号拡張を動かす</h3>
+      <p>引数の下位８ビットに <code>11111111</code> を用意して、２種類の機械語関数へ渡します。６４ビットへ広げた後の値と、１６進表記を予想してください。</p>
+      <pre><code>/tmp/ch09-inspect extend</code></pre>
+      <details><summary>実行後に開く：２５５を保つか、－１を保つか</summary><p>ゼロ拡張は値２５５、１６進で <code>00000000000000ff</code>。符号拡張は値－１、１６進で <code>ffffffffffffffff</code> です。符号拡張の表示では、符号付きの戻り値を十進で表示し、同じ２の補数表現に対応する符号なし値へ変換して１６進も表示しています。</p></details>
+      <p>この結果は、引数全体の２５５を符号付きのまま広げたものではありません。関数が最初に<strong>下位８ビットだけを</strong>見て、その最上位を符号として拡張した結果です。どの幅から拡張したかを言葉にしてください。</p>
+      <h3>実験３：eax への書き込みを見る</h3>
+      <p><code>mov rax, -1</code> の後に <code>mov eax, 1</code> を実行します。rax の上位３２ビットが残るかを予想してから実行します。</p>
+      <pre><code>/tmp/ch09-inspect register</code></pre>
+      <details><summary>実行後に開く：rax 全体も１になる</summary><p>上位３２ビットは０になるので、rax 全体の値は１です。eax は独立した別レジスタではなく、書き込みには上位を０にする効果があります。</p></details>
+      <p>命令を確かめたい場合は、次のコマンドでこの関数だけを逆アセンブルできます。<code>-d</code> は機械語の表示、<code>-Mintel</code> は本書の記法、最後の指定は関数名です。</p>
+      <pre><code>objdump -d -Mintel --disassemble=write_eax /tmp/ch09-inspect</code></pre>
+      <h3>実験４：加算の桁あふれと、Ｃの変換を比べる</h3>
+      <p>まず、２５５＋１と１２７＋１を <code>add al, 1</code> で行います。結果のビットと、ＣＦ・ＯＦの０／１を予想してください。</p>
+      <pre><code>/tmp/ch09-inspect add</code></pre>
+      <details><summary>実行後に開く：二つの「範囲を超える」</summary><p>２５５＋１は結果０・ＣＦ１・ＯＦ０、１２７＋１は結果１２８・ＣＦ０・ＯＦ１です。結果欄は下位８ビットを符号なしで表示しているため、後者は１２８と出ます。符号付きとして解釈すると－１２８です。</p></details>
+      <p>次に、理論で見た <code>uint8_t a=255</code> のＣの例を動かします。加算直後の sum と、狭めた後の narrowed が同じか予想します。</p>
+      <pre><code>/tmp/ch09-inspect convert</code></pre>
+      <details><summary>実行後に開く：計算した幅と、保存した幅が違う</summary><p>sum は２５６、８ビットへ変換した後は０です。Ｃの式の型の規則があるため、変数 a の宣言だけを見て「８ビットの加算命令と同じ」とは言えません。</p></details>
+      <h3>実験５：表示した値と、終了状態を同時に見る</h3>
+      <p><a href="labs/ch09/exit-value.c">exit-value.c</a> は、返す値を printf で表示してから、同じ値を main から返すプログラムです。最初は３００を使います。</p>
+      <pre><code>gcc -std=c11 -Wall -Wextra -o /tmp/ch09-exit exit-value.c
+/tmp/ch09-exit
+echo $?</code></pre>
+      <details><summary>実行後に開く：３００と４４が両方見える</summary><p>プログラム自身は「main が返す値=300」と表示します。直後の echo は４４を表示します。main の int が３００を表せないのではなく、終了状態を受け取る経路で下位８ビットを見るためです。</p></details>
+      <p>次は返す値を－２に変えてビルドします。<code>-DRESULT=-2</code> は、ソース内の RESULT というマクロを－２として処理する指定です。ソースファイルを書き換えずに、実験する値を変更できます。</p>
+      <pre><code>gcc -std=c11 -Wall -Wextra -DRESULT=-2 -o /tmp/ch09-exit exit-value.c
+/tmp/ch09-exit
+echo $?</code></pre>
+      <details><summary>実行後に開く：－２の下位８ビットは２５４</summary><p>プログラムの表示は－２、シェルで見る終了状態は２５４です。下位８ビットは <code>11111110</code> で、終了状態としては０〜２５５の値で見えます。第５章で見た現象と同じです。</p></details>
+      <p>終了状態を確認するときは、対象のプログラムの直後に <code>echo $?</code> を実行します。別のコマンドを挟むと、その別のコマンドの終了状態に変わります。</p>
+      <p>全体の検証は、第９章のフォルダで <code>bash check.sh</code> と実行できます。<a href="labs/ch09/check.sh">検証スクリプト</a>は最適化なしと最適化ありの両方で表示を確認し、３００と－２の終了状態も確かめます。</p>
+    </section>
+    <section id="check" aria-labelledby="check-title">
+      <h2 id="check-title"><span class="number">４</span>理解チェック</h2>
+      <h3>11111111 だけを見て、値は－１だと言い切れるか？</h3>
+      <details><summary>解説を読む</summary><p>幅と解釈が必要です。８ビットの２の補数なら－１、８ビットの符号なしなら２５５です。より広い値の下位８ビットだけを抜き出した図かもしれません。</p></details>
+      <h3>８ビットの－２をゼロ拡張すると、－２のままか？</h3>
+      <details><summary>解説を読む</summary><p>いいえ。元の下位８ビットは２５４を表す並びなので、上を０で埋めると正の２５４になります。負の値を保って幅を広げたいなら符号拡張が必要です。</p></details>
+      <h3>ＣＦが０なら、符号付きの計算にも範囲超過はないか？</h3>
+      <details><summary>解説を読む</summary><p>いいえ。８ビットの１２７＋１ではＣＦは０ですが、符号付きの正の１２８は入らないためＯＦは１です。どの解釈の範囲を調べるかで、使う条件が違います。</p></details>
+      <h3>eax を読むだけで、rax の上位３２ビットは０になるか？</h3>
+      <details><summary>解説を読む</summary><p>なりません。ここで説明した効果は eax への書き込みです。下位だけを読む操作と、書き込みによって全体に起こる変化を分けます。</p></details>
+      <h3>Ｃの符号付き加算で範囲を超えたら、必ず負になるか？</h3>
+      <details><summary>解説を読む</summary><p>保証されません。通常のＣでは符号付き加算の範囲超過は未定義動作です。ＣＰＵの加算命令の結果だけから、Ｃのソースの振る舞いを決め付けてはいけません。</p></details>
+      <h3>終了状態が４４なら、計算結果が４４だったと断定できるか？</h3>
+      <details><summary>解説を読む</summary><p>できません。３００など、下位８ビットが同じ値も４４に見えます。値全体を確認するなら、今回のように、適切な型の値を表示する観察手段が必要です。</p></details>
+      <div class="sources"><h3>参照先</h3><p><a href="https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Integer-Overflow.html">ＧＮＵ Ｃ言語マニュアル：整数の範囲超過</a>、<a href="https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Signed-Overflow.html">符号付き整数の範囲超過</a>、<a href="https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html">インテル：命令とレジスタの公式マニュアル</a>。</p><p>教材のリナックス環境で、ビットの解釈、拡張、eax の書き込み、加算フラグ、Ｃの変換、終了状態を検証します。</p></div>
+    </section>
+    <footer><nav class="chapter-navigation" aria-label="前後の章"><a class="chapter-prev" href="function-calls.html" rel="prev">第８章　関数呼び出し</a><a class="chapter-next" href="pointers-and-strings.html" rel="next">第１０章　ポインタと文字列</a></nav></footer>
+  </main>
+</body>
+</html>
